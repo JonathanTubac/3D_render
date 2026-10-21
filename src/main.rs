@@ -1,11 +1,13 @@
 mod color;
 mod framebuffer;
 mod line;
+mod obj;
 mod vertices;
 
 use color::Color;
 use framebuffer::Framebuffer;
 use line::triangle;
+use obj::{load_obj, Obj};
 use raylib::prelude::Vector2;
 
 /// Rellena un rectángulo a profundidad constante usando el z-buffer.
@@ -17,8 +19,27 @@ fn fill_rect(fb: &mut Framebuffer, x0: i32, y0: i32, w: i32, h: i32, depth: f32)
     }
 }
 
+/// Imprime un resumen del modelo y los vértices de su primer triángulo.
+fn resumen_obj(nombre: &str, obj: &Obj) {
+    println!(
+        "{nombre}: {} vértices, {} índices, {} triángulos",
+        obj.vertices.len(),
+        obj.indices.len(),
+        obj.triangle_count()
+    );
+    if obj.triangle_count() > 0 {
+        let [a, b, c] = obj.triangle(0);
+        println!("  primer triángulo: {a:?} {b:?} {c:?}");
+    }
+}
+
 fn main() -> std::io::Result<()> {
     vertices::demo();
+
+    let cubo = load_obj("assets/cube.obj")?;
+    resumen_obj("cube.obj", &cubo);
+    let nave = load_obj("spaceship.obj")?;
+    resumen_obj("spaceship.obj", &nave);
 
     let mut fb = Framebuffer::new(800, 600);
 
