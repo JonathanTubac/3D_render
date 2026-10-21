@@ -25,7 +25,19 @@ Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa 
 cargo run --release
 ```
 
-Abre una ventana de 1024×768 con el modelo y guarda la captura en `screenshot.png`.
+Abre una ventana de 1024×768 con el modelo y guarda la captura (vista de frente) en
+`screenshot.png`.
+
+### Controles
+
+| Entrada | Acción |
+|---|---|
+| Arrastrar con clic izquierdo / flechas | Rotar el modelo |
+| Rueda del mouse | Zoom |
+| `R` | Regresar a la vista inicial |
+
+La ventana arranca con el zoom necesario para que el modelo quepa completo desde
+cualquier ángulo. Solo se vuelve a dibujar cuando la cámara se mueve.
 Para generar solo la captura, sin abrir la ventana:
 
 ```sh
@@ -51,7 +63,7 @@ spaceship.obj → vértices + índices → triángulos → líneas → píxeles 
 | Archivo | Qué hace |
 |---|---|
 | `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. |
-| `src/render.rs` | Escala y centra los vértices en la pantalla y recorre los triángulos de tres en tres índices. |
+| `src/render.rs` | Escala, centra y rota los vértices (cámara orbital, proyección ortográfica) y recorre los triángulos de tres en tres índices. |
 | `src/line.rs` | `line` (algoritmo de Bresenham) y `triangle` (tres llamadas a `line`). |
 | `src/framebuffer.rs` | Buffer de color y z-buffer propios; se convierte a una `Image` de Raylib para mostrarse o exportarse. |
 | `src/color.rs` | Color RGB de 8 bits por canal. |

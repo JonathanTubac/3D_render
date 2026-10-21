@@ -97,6 +97,16 @@ impl Framebuffer {
         image
     }
 
+    /// Escribe el buffer de color en `out` como bytes RGBA, el formato que espera
+    /// una textura de Raylib. Reutilizar `out` evita reservar memoria en cada frame.
+    pub fn write_rgba(&self, out: &mut Vec<u8>) {
+        out.clear();
+        out.reserve(self.buffer.len() * 4);
+        for c in &self.buffer {
+            out.extend_from_slice(&[c.r, c.g, c.b, 255]);
+        }
+    }
+
     /// Guarda el buffer de color como BMP de 24 bits sin compresión.
     pub fn write_bmp<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let mut out = BufWriter::new(File::create(path)?);
