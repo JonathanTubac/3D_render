@@ -1,0 +1,4 @@
+# bindgen (usado por raylib-sys) no encuentra vcruntime.h por su cuenta en esta máquina,
+# así que se le indica la carpeta de includes de MSVC.
+[env]
+BINDGEN_EXTRA_CLANG_ARGS = "'-IC:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.43.34808/include'"

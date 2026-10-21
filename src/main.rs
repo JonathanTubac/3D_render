@@ -1,5 +1,6 @@
 mod color;
 mod framebuffer;
+mod vertices;
 
 use color::Color;
 use framebuffer::Framebuffer;
@@ -14,6 +15,8 @@ fn fill_rect(fb: &mut Framebuffer, x0: i32, y0: i32, w: i32, h: i32, depth: f32)
 }
 
 fn main() -> std::io::Result<()> {
+    vertices::demo();
+
     let mut fb = Framebuffer::new(800, 600);
 
     fb.set_background_color(Color::from_hex(0x0B0E1A));
