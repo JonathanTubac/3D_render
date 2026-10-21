@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+use raylib::prelude::Image;
+
 use crate::color::Color;
 
 /// Framebuffer con buffer de color y z-buffer (buffer de profundidad).
@@ -80,6 +82,19 @@ impl Framebuffer {
 
     pub fn get_depth(&self, x: i32, y: i32) -> Option<f32> {
         self.index(x, y).map(|i| self.zbuffer[i])
+    }
+
+    /// Copia el buffer de color a una `Image` de Raylib, para mostrarlo en una
+    /// ventana o exportarlo como PNG.
+    pub fn to_image(&self) -> Image {
+        let mut image = Image::gen_image_color(self.width as i32, self.height as i32, self.background_color);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let c = self.buffer[y * self.width + x];
+                image.draw_pixel(x as i32, y as i32, c);
+            }
+        }
+        image
     }
 
     /// Guarda el buffer de color como BMP de 24 bits sin compresión.

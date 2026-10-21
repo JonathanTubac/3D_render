@@ -29,3 +29,9 @@ impl Color {
         Color::new(to_u8(r), to_u8(g), to_u8(b))
     }
 }
+
+impl From<Color> for raylib::ffi::Color {
+    fn from(c: Color) -> Self {
+        raylib::ffi::Color { r: c.r, g: c.g, b: c.b, a: 255 }
+    }
+}

@@ -2,97 +2,68 @@ mod color;
 mod framebuffer;
 mod line;
 mod obj;
+mod render;
+// Ejercicio de la fase de vértices; el renderer no lo utiliza.
+#[allow(dead_code)]
 mod vertices;
+
+use std::time::Instant;
+
+use raylib::prelude::*;
 
 use color::Color;
 use framebuffer::Framebuffer;
-use line::triangle;
-use obj::{load_obj, Obj};
-use raylib::prelude::Vector2;
+use obj::load_obj;
+use render::draw_obj_wireframe;
 
-/// Rellena un rectángulo a profundidad constante usando el z-buffer.
-fn fill_rect(fb: &mut Framebuffer, x0: i32, y0: i32, w: i32, h: i32, depth: f32) {
-    for y in y0..y0 + h {
-        for x in x0..x0 + w {
-            fb.point_with_depth(x, y, depth);
-        }
-    }
-}
-
-/// Imprime un resumen del modelo y los vértices de su primer triángulo.
-fn resumen_obj(nombre: &str, obj: &Obj) {
-    println!(
-        "{nombre}: {} vértices, {} índices, {} triángulos",
-        obj.vertices.len(),
-        obj.indices.len(),
-        obj.triangle_count()
-    );
-    if obj.triangle_count() > 0 {
-        let [a, b, c] = obj.triangle(0);
-        println!("  primer triángulo: {a:?} {b:?} {c:?}");
-    }
-}
+const ANCHO: usize = 1024;
+const ALTO: usize = 768;
+const MODELO: &str = "spaceship.obj";
+const CAPTURA: &str = "screenshot.png";
 
 fn main() -> std::io::Result<()> {
-    vertices::demo();
+    let inicio = Instant::now();
+    let modelo = load_obj(MODELO)?;
+    println!(
+        "{MODELO}: {} vértices, {} triángulos (cargado en {:.2?})",
+        modelo.vertices.len(),
+        modelo.triangle_count(),
+        inicio.elapsed()
+    );
 
-    let cubo = load_obj("assets/cube.obj")?;
-    resumen_obj("cube.obj", &cubo);
-    let nave = load_obj("spaceship.obj")?;
-    resumen_obj("spaceship.obj", &nave);
-
-    let mut fb = Framebuffer::new(800, 600);
-
+    let mut fb = Framebuffer::new(ANCHO, ALTO);
     fb.set_background_color(Color::from_hex(0x0B0E1A));
     fb.clear();
+    fb.set_current_color(Color::from_hex(0x6BE4FF));
 
-    // Unas "estrellas" sin profundidad.
-    fb.set_current_color(Color::WHITE);
-    for i in 0..200 {
-        let x = (i * 7919) % 800;
-        let y = (i * 104729) % 600;
-        fb.point(x, y);
+    let inicio = Instant::now();
+    draw_obj_wireframe(&mut fb, &modelo);
+    println!("Dibujado en {:.2?}", inicio.elapsed());
+
+    let imagen = fb.to_image();
+    imagen.export_image(CAPTURA);
+    println!("Captura guardada en {CAPTURA}");
+
+    // `--no-window` solo genera la captura, sin abrir la ventana.
+    if std::env::args().any(|a| a == "--no-window") {
+        return Ok(());
     }
 
-    // Demostración del z-buffer: el rojo se dibuja DESPUÉS pero está más lejos,
-    // así que queda detrás del azul en la zona donde se traslapan.
-    fb.set_current_color(Color::from_hex(0x3A7BFF));
-    fill_rect(&mut fb, 200, 150, 300, 200, 1.0);
+    let (mut rl, thread) = raylib::init()
+        .size(ANCHO as i32, ALTO as i32)
+        .title("Spaceship render")
+        .build();
+    rl.set_target_fps(60);
 
-    fb.set_current_color(Color::from_hex(0xFF4040));
-    fill_rect(&mut fb, 350, 250, 300, 200, 2.0);
+    // El modelo se dibuja una sola vez en nuestro framebuffer; la ventana solo
+    // muestra ese resultado como textura.
+    let textura = rl
+        .load_texture_from_image(&thread, &imagen)
+        .expect("no se pudo crear la textura del framebuffer");
 
-    // Triángulo del ejercicio.
-    fb.set_current_color(Color::from_hex(0xFFD23F));
-    let a = Vector2::new(320.0, 100.0);
-    let b = Vector2::new(150.0, 350.0);
-    let c = Vector2::new(500.0, 350.0);
-    triangle(&mut fb, a, b, c);
-
-    // Otros triángulos con distinto tamaño y orientación.
-    fb.set_current_color(Color::from_hex(0x7CFF6B));
-    triangle(
-        &mut fb,
-        Vector2::new(560.0, 80.0),
-        Vector2::new(760.0, 140.0),
-        Vector2::new(600.0, 220.0),
-    );
-    triangle(
-        &mut fb,
-        Vector2::new(80.0, 560.0),
-        Vector2::new(300.0, 420.0),
-        Vector2::new(260.0, 590.0),
-    );
-    // Triángulo muy delgado, casi una línea.
-    triangle(
-        &mut fb,
-        Vector2::new(520.0, 500.0),
-        Vector2::new(780.0, 520.0),
-        Vector2::new(540.0, 506.0),
-    );
-
-    fb.write_bmp("out.bmp")?;
-    fb.write_depth_bmp("depth.bmp")?;
-    println!("Imagen guardada en out.bmp y depth.bmp");
+    while !rl.window_should_close() {
+        let mut d = rl.begin_drawing(&thread);
+        d.draw_texture(&textura, 0, 0, raylib::prelude::Color::WHITE);
+    }
     Ok(())
 }
