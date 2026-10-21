@@ -36,6 +36,13 @@ pub fn line(fb: &mut Framebuffer, start: Vector2, end: Vector2) {
     }
 }
 
+/// Dibuja el contorno de un triángulo conectando sus tres vértices con `line`.
+pub fn triangle(fb: &mut Framebuffer, a: Vector2, b: Vector2, c: Vector2) {
+    line(fb, a, b);
+    line(fb, b, c);
+    line(fb, c, a);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +77,17 @@ mod tests {
         let mut fb = Framebuffer::new(20, 20);
         line(&mut fb, Vector2::new(3.0, 19.0), Vector2::new(5.0, 0.0));
         assert_eq!(painted(&fb), 20);
+    }
+
+    #[test]
+    fn triangle_draws_all_three_edges() {
+        let mut fb = Framebuffer::new(20, 20);
+        let (a, b, c) = (Vector2::new(2.0, 2.0), Vector2::new(17.0, 2.0), Vector2::new(2.0, 17.0));
+        triangle(&mut fb, a, b, c);
+        assert_eq!(fb.get_color(10, 2), Some(Color::WHITE)); // a-b
+        assert_eq!(fb.get_color(2, 10), Some(Color::WHITE)); // c-a
+        assert_eq!(fb.get_color(10, 9), Some(Color::WHITE)); // b-c
+        assert_eq!(fb.get_color(6, 6), Some(Color::BLACK)); // interior vacío
     }
 
     #[test]

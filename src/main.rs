@@ -5,7 +5,7 @@ mod vertices;
 
 use color::Color;
 use framebuffer::Framebuffer;
-use line::line;
+use line::triangle;
 use raylib::prelude::Vector2;
 
 /// Rellena un rectángulo a profundidad constante usando el z-buffer.
@@ -41,14 +41,34 @@ fn main() -> std::io::Result<()> {
     fb.set_current_color(Color::from_hex(0xFF4040));
     fill_rect(&mut fb, 350, 250, 300, 200, 2.0);
 
-    // Abanico de líneas en todas las direcciones para probar `line`.
+    // Triángulo del ejercicio.
     fb.set_current_color(Color::from_hex(0xFFD23F));
-    let centro = Vector2::new(400.0, 300.0);
-    for i in 0..24 {
-        let angulo = i as f32 * std::f32::consts::TAU / 24.0;
-        let fin = Vector2::new(centro.x + 250.0 * angulo.cos(), centro.y + 250.0 * angulo.sin());
-        line(&mut fb, centro, fin);
-    }
+    let a = Vector2::new(320.0, 100.0);
+    let b = Vector2::new(150.0, 350.0);
+    let c = Vector2::new(500.0, 350.0);
+    triangle(&mut fb, a, b, c);
+
+    // Otros triángulos con distinto tamaño y orientación.
+    fb.set_current_color(Color::from_hex(0x7CFF6B));
+    triangle(
+        &mut fb,
+        Vector2::new(560.0, 80.0),
+        Vector2::new(760.0, 140.0),
+        Vector2::new(600.0, 220.0),
+    );
+    triangle(
+        &mut fb,
+        Vector2::new(80.0, 560.0),
+        Vector2::new(300.0, 420.0),
+        Vector2::new(260.0, 590.0),
+    );
+    // Triángulo muy delgado, casi una línea.
+    triangle(
+        &mut fb,
+        Vector2::new(520.0, 500.0),
+        Vector2::new(780.0, 520.0),
+        Vector2::new(540.0, 506.0),
+    );
 
     fb.write_bmp("out.bmp")?;
     fb.write_depth_bmp("depth.bmp")?;
