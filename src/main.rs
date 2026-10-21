@@ -1,4 +1,5 @@
 mod color;
+mod fragment;
 mod framebuffer;
 mod line;
 mod obj;
@@ -12,6 +13,7 @@ use std::time::Instant;
 use raylib::prelude::*;
 
 use color::Color;
+use crate::fragment::Fragment;
 use framebuffer::Framebuffer;
 use obj::{load_obj, Obj};
 use render::{draw_obj_wireframe, Camara, Encuadre};
@@ -20,6 +22,7 @@ const ANCHO: usize = 1024;
 const ALTO: usize = 768;
 const MODELO: &str = "spaceship.obj";
 const CAPTURA: &str = "screenshot.png";
+const COLOR_MODELO: Color = Color::from_hex(0x6BE4FF);
 
 /// Radianes que gira la cámara por cada pixel que se arrastra el mouse.
 const SENSIBILIDAD_MOUSE: f32 = 0.01;
@@ -69,9 +72,34 @@ fn actualizar_camara(rl: &RaylibHandle, camara: &mut Camara, inicial: &Camara) -
     *camara != anterior
 }
 
+/// Fragmentos del ejercicio de la fase de fragmentos.
+fn fragmentos_de_prueba() -> Vec<Fragment> {
+    let mut fragments: Vec<Fragment> = Vec::new();
+
+    // Tres píxeles consecutivos: rojo, verde y azul.
+    fragments.push(Fragment::new(100.0, 80.0, Vector3::new(1.0, 0.0, 0.0), 0.0));
+    fragments.push(Fragment::new(101.0, 80.0, Vector3::new(0.0, 1.0, 0.0), 0.0));
+    fragments.push(Fragment::new(102.0, 80.0, Vector3::new(0.0, 0.0, 1.0), 0.0));
+
+    // Misma posición que el rojo: como se escribe después, queda amarillo.
+    fragments.push(Fragment::new(100.0, 80.0, Vector3::new(1.0, 1.0, 0.0), 0.0));
+
+    // Fuera del framebuffer: `point` lo descarta y no aparece en la imagen.
+    fragments.push(Fragment::new(-1.0, 80.0, Vector3::new(1.0, 1.0, 1.0), 0.0));
+
+    fragments
+}
+
 fn render(fb: &mut Framebuffer, modelo: &Obj, encuadre: &Encuadre, camara: &Camara) {
     fb.clear();
+    fb.set_current_color(COLOR_MODELO);
     draw_obj_wireframe(fb, modelo, encuadre, camara);
+
+    // Crear los fragmentos no modifica la imagen; se escriben al recorrerlos.
+    for fragment in &fragmentos_de_prueba() {
+        fb.set_current_color(Color::from(fragment.color));
+        fb.point(fragment.position.x as i32, fragment.position.y as i32);
+    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -87,7 +115,6 @@ fn main() -> std::io::Result<()> {
 
     let mut fb = Framebuffer::new(ANCHO, ALTO);
     fb.set_background_color(Color::from_hex(0x0B0E1A));
-    fb.set_current_color(Color::from_hex(0x6BE4FF));
 
     // La captura siempre es la vista de frente, ocupando toda la pantalla.
     let inicio = Instant::now();

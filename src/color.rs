@@ -35,3 +35,11 @@ impl From<Color> for raylib::ffi::Color {
         raylib::ffi::Color { r: c.r, g: c.g, b: c.b, a: 255 }
     }
 }
+
+/// Convierte un color guardado como `Vector3` (r, g, b en [0.0, 1.0]), como el de
+/// un fragmento, a un color de 8 bits por canal.
+impl From<raylib::math::Vector3> for Color {
+    fn from(v: raylib::math::Vector3) -> Self {
+        Color::from_float(v.x, v.y, v.z)
+    }
+}
