@@ -1,9 +1,12 @@
 mod color;
 mod framebuffer;
+mod line;
 mod vertices;
 
 use color::Color;
 use framebuffer::Framebuffer;
+use line::line;
+use raylib::prelude::Vector2;
 
 /// Rellena un rectángulo a profundidad constante usando el z-buffer.
 fn fill_rect(fb: &mut Framebuffer, x0: i32, y0: i32, w: i32, h: i32, depth: f32) {
@@ -37,6 +40,15 @@ fn main() -> std::io::Result<()> {
 
     fb.set_current_color(Color::from_hex(0xFF4040));
     fill_rect(&mut fb, 350, 250, 300, 200, 2.0);
+
+    // Abanico de líneas en todas las direcciones para probar `line`.
+    fb.set_current_color(Color::from_hex(0xFFD23F));
+    let centro = Vector2::new(400.0, 300.0);
+    for i in 0..24 {
+        let angulo = i as f32 * std::f32::consts::TAU / 24.0;
+        let fin = Vector2::new(centro.x + 250.0 * angulo.cos(), centro.y + 250.0 * angulo.sin());
+        line(&mut fb, centro, fin);
+    }
 
     fb.write_bmp("out.bmp")?;
     fb.write_depth_bmp("depth.bmp")?;
