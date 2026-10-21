@@ -1,71 +1,84 @@
 # Spaceship Render
 
-Renderer por software escrito en Rust para el curso de Gráficas por Computadora (UVG).
-Carga un modelo `.obj` hecho en Blender y dibuja el contorno de todos sus triángulos
-con algoritmos propios. Raylib solo se usa para abrir la ventana, mostrar el
-framebuffer como textura y guardar la captura en PNG; **no** se usan sus funciones
-para cargar ni dibujar modelos.
+**English** · [Español](README.es.md)
 
-## Proyecto 1 — Parte 1: dibujando un modelo OBJ
+A software renderer written in Rust for the Computer Graphics course at Universidad del Valle de Guatemala (UVG).
+It loads a spaceship modeled in Blender from an `.obj` file and draws the outline of every one
+of its triangles using hand-written algorithms: an OBJ parser, Bresenham line drawing and a custom
+framebuffer.
 
-![Nave renderizada en wireframe](screenshot.png)
+Raylib is only used to open the window, display the framebuffer as a texture and read mouse and
+keyboard input. Raylib's model loading and drawing functions are **not** used. Every pixel of
+the model is drawn by this project's own code.
 
-Modelo: `spaceship.obj`, 286,689 vértices y 573,439 triángulos.
+## Screenshots
 
-Como todavía no hay proyección, se dibujan directamente las componentes `x` y `y`
-de cada vértice (vista de frente). Los vértices se escalan con la misma escala en
-ambos ejes y se trasladan para que el modelo quede centrado y ocupe el 90 % de la
-ventana sin salirse.
+![Spaceship wireframe, angled view](screenshot.png)
 
-## Cómo ejecutarlo
+| | |
+|---|---|
+| ![Close-up view](screenshot1.png) | ![Front view](screenshot2.png) |
 
-Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa para compilar Raylib.
+The model is `spaceship.obj`, with 286,689 vertices and 573,439 triangles.
+
+## Features
+
+- **OBJ loader:** reads vertex positions (`v`) and faces (`f`), converts the 1-based OBJ
+  indices to 0-based, accepts the `v/vt/vn` face format and splits faces with more than
+  three vertices into triangles (fan triangulation).
+- **Wireframe rendering:** every triangle is drawn as three Bresenham lines into the framebuffer.
+- **Automatic framing:** the model is centered and scaled to fit the window.
+- **Orbit camera:** you can rotate and zoom the model in real time. The projection is
+  orthographic for now; perspective comes in a later stage of the course.
+- **Redraw on demand:** the model is only redrawn when the camera moves.
+
+## Running
+
+Requirements: Rust (MSVC toolchain on Windows) and CMake, which the `raylib` crate uses to build Raylib.
 
 ```sh
 cargo run --release
 ```
 
-Abre una ventana de 1024×768 con el modelo y guarda la captura (vista de frente) en
-`screenshot.png`.
+This opens a 1024×768 window with the model and saves a front view to `screenshot.png`.
+Use `--release`: drawing 573k triangles in a debug build is much slower.
 
-### Controles
-
-| Entrada | Acción |
-|---|---|
-| Arrastrar con clic izquierdo / flechas | Rotar el modelo |
-| Rueda del mouse | Zoom |
-| `R` | Regresar a la vista inicial |
-
-La ventana arranca con el zoom necesario para que el modelo quepa completo desde
-cualquier ángulo. Solo se vuelve a dibujar cuando la cámara se mueve.
-Para generar solo la captura, sin abrir la ventana:
+To only generate the image, without opening the window:
 
 ```sh
 cargo run --release -- --no-window
 ```
 
-Para correr los tests:
+To run the tests:
 
 ```sh
 cargo test
 ```
 
-> **Windows:** `.cargo/config.toml` le indica a `bindgen` dónde están los headers de
-> MSVC porque en la máquina de desarrollo no los encontraba solo. Si tu instalación de
-> Visual Studio está en otra ruta, ajústala ahí (o borra el archivo si compila sin él).
+> **Windows:** `.cargo/config.toml` tells `bindgen` where the MSVC headers are, because it
+> could not find them on its own on the development machine. If your Visual Studio is installed
+> in a different path, update that file, or delete it if the project builds without it.
 
-## Cómo funciona
+### Controls
 
-```
-spaceship.obj → vértices + índices → triángulos → líneas → píxeles → ventana
-```
-
-| Archivo | Qué hace |
+| Input | Action |
 |---|---|
-| `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. |
-| `src/render.rs` | Escala, centra y rota los vértices (cámara orbital, proyección ortográfica) y recorre los triángulos de tres en tres índices. |
-| `src/line.rs` | `line` (algoritmo de Bresenham) y `triangle` (tres llamadas a `line`). |
-| `src/framebuffer.rs` | Buffer de color y z-buffer propios; se convierte a una `Image` de Raylib para mostrarse o exportarse. |
-| `src/color.rs` | Color RGB de 8 bits por canal. |
-| `src/main.rs` | Carga el modelo, lo dibuja en el framebuffer, guarda la captura y abre la ventana. |
-| `src/vertices.rs` | Ejercicio de la fase de vértices (`Vector2` y `Vector3`). |
+| Left-click drag / arrow keys | Rotate the model |
+| Mouse wheel | Zoom |
+| `R` | Reset the view |
+
+## How it works
+
+```
+spaceship.obj → vertices + indices → triangles → lines → pixels → window
+```
+
+| File | Purpose |
+|---|---|
+| `src/obj.rs` | OBJ loader that builds an `Obj { vertices, indices }`. |
+| `src/render.rs` | Camera, framing and the vertex-to-screen transform; walks the index list three at a time and draws each triangle. |
+| `src/line.rs` | `line` (Bresenham) and `triangle` (three calls to `line`). |
+| `src/framebuffer.rs` | Color buffer and z-buffer; exports to a Raylib image or texture. |
+| `src/color.rs` | 8-bit RGB color. |
+| `src/main.rs` | Loads the model, saves the screenshot, runs the window and handles input. |
+| `src/vertices.rs` | Warm-up exercise with `Vector2` and `Vector3`. |
