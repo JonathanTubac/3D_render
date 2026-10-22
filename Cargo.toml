@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION"] }
+
+# Un solo codegen unit permite que el compilador optimice en línea las llamadas
+# entre módulos (rasterize -> triangle -> line). Con el valor por defecto, dibujar
+# la nave tardaba ~280 ms en vez de ~180 ms.
+[profile.release]
+codegen-units = 1
