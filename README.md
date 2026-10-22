@@ -1,234 +1,300 @@
 # Spaceship Render
 
-**English** · [Español](README.es.md)
+Renderer por software escrito en Rust para el curso de Gráficas por Computadora (UVG).
+Carga un modelo `.obj` hecho en Blender y dibuja sus triángulos, en contorno o
+rellenos, con algoritmos propios. Raylib solo se usa para abrir la ventana, mostrar el
+framebuffer como textura y guardar la captura en PNG; **no** se usan sus funciones
+para cargar ni dibujar modelos.
 
-A software renderer written in Rust for the Computer Graphics course at Universidad del Valle de Guatemala (UVG).
-It loads a spaceship modeled in Blender from an `.obj` file and draws its triangles, as outlines
-or filled, using hand-written algorithms: an OBJ parser, a four-stage pipeline (vertex shader,
-primitive assembly, rasterization, fragment shader), Bresenham lines, barycentric and scanline
-triangle fills, and a custom framebuffer.
+## Proyecto 1 — Parte 1: dibujando un modelo OBJ
 
-Raylib is only used to open the window, display the framebuffer as a texture and read mouse and
-keyboard input. Raylib's model loading and drawing functions are **not** used. Every pixel of
-the model is drawn by this project's own code.
-
-## Screenshots
-
-![Spaceship wireframe, angled view](screenshot.png)
+![Nave renderizada en wireframe](screenshot.png)
 
 | | |
 |---|---|
-| ![Close-up view](screenshot1.png) | ![Front view](screenshot2.png) |
+| ![Vista de cerca](screenshot1.png) | ![Vista de frente](screenshot2.png) |
 
-The model is `spaceship.obj`, with 286,689 vertices and 573,439 triangles.
+Modelo: `spaceship.obj`, 286,689 vértices y 573,439 triángulos.
 
-## Features
+Como todavía no hay proyección, se dibujan directamente las componentes `x` y `y`
+de cada vértice (vista de frente). Los vértices se escalan con la misma escala en
+ambos ejes y se trasladan para que el modelo quede centrado y ocupe el 90 % de la
+ventana sin salirse.
 
-- **OBJ loader:** reads vertex positions (`v`) and faces (`f`), converts the 1-based OBJ
-  indices to 0-based, accepts the `v/vt/vn` face format and splits faces with more than
-  three vertices into triangles (fan triangulation).
-- **Three rasterization modes:** wireframe (three Bresenham lines per triangle), barycentric
-  fill and scanline fill. Both fills produce exactly the same pixels.
-- **Automatic framing:** the model is centered and scaled to fit the window.
-- **Orbit camera:** you can rotate and zoom the model in real time. The projection is
-  orthographic for now; perspective comes in a later stage of the course.
-- **Redraw on demand:** the model is only redrawn when the camera moves.
+## Cómo ejecutarlo
 
-## Running
+Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa para compilar Raylib.
 
-Requirements: Rust (MSVC toolchain on Windows) and CMake, which the `raylib` crate uses to build Raylib.
-
-To open the spaceship viewer:
+Para abrir el visor de la nave:
 
 ```sh
 cargo run --release -- --nave
 ```
 
-This opens a 1024×768 window with the model. Use `--release`: drawing 573k triangles in a
-debug build is much slower.
+Abre una ventana de 1024×768 con el modelo. Usa `--release`: en modo debug dibujar
+573k triángulos es mucho más lento.
 
-To save a front view to `captura.png` without opening the window:
+### Controles
+
+| Entrada | Acción |
+|---|---|
+| Arrastrar con clic izquierdo / flechas | Rotar el modelo |
+| Rueda del mouse | Zoom |
+| `R` | Regresar a la vista inicial |
+| `1` / `2` / `3` | Modo: wireframe / relleno baricéntrico / relleno scanline |
+
+La ventana arranca con el zoom necesario para que el modelo quepa completo desde
+cualquier ángulo. Solo se vuelve a dibujar cuando la cámara se mueve.
+
+Para guardar la vista de frente en `captura.png` sin abrir la ventana:
 
 ```sh
 cargo run --release -- --nave --captura
 ```
 
-Running without `--nave` (`cargo run --release`) opens the fill lab's test scene; keys `1`, `2`
-and `3` switch the mode. Other modes:
+Sin `--nave` (`cargo run --release`) se abre la escena de prueba del laboratorio de
+relleno; las teclas `1`, `2` y `3` cambian el modo. Otros modos del programa:
 
 ```sh
-cargo run --release -- --capturas-relleno    # saves docs/relleno_*.png
-cargo run --release -- --benchmark-triangles # measures rasterization in each mode
+cargo run --release -- --capturas-relleno    # guarda docs/relleno_*.png
+cargo run --release -- --benchmark-triangles # mide la rasterización de cada modo
 ```
 
-To run the tests:
+Para correr los tests:
 
 ```sh
 cargo test
 ```
 
-> **Windows:** `.cargo/config.toml` tells `bindgen` where the MSVC headers are, because it
-> could not find them on its own on the development machine. If your Visual Studio is installed
-> in a different path, update that file, or delete it if the project builds without it.
+> **Windows:** `.cargo/config.toml` le indica a `bindgen` dónde están los headers de
+> MSVC porque en la máquina de desarrollo no los encontraba solo. Si tu instalación de
+> Visual Studio está en otra ruta, ajústala ahí (o borra el archivo si compila sin él).
 
-### Controls
-
-| Input | Action |
-|---|---|
-| Left-click drag / arrow keys | Rotate the model |
-| Mouse wheel | Zoom |
-| `R` | Reset the view |
-| `1` / `2` / `3` | Mode: wireframe / barycentric fill / scanline fill |
-
-## How it works
+## Cómo funciona
 
 ```
-spaceship.obj → Obj → vertex array → model matrix (Uniforms) → triangles → fragments → framebuffer → window
+spaceship.obj → Obj → arreglo de vértices → matriz de modelo (Uniforms) → triángulos → fragmentos → framebuffer → ventana
 ```
 
-| File | Purpose |
+| Archivo | Qué hace |
 |---|---|
-| `src/obj.rs` | OBJ loader that builds an `Obj { vertices, indices }`; `get_vertex_array()` returns the vertices ordered by face. |
-| `src/vertex.rs` | `Vertex` with its original `position`, `color` and screen-space `transformed_position`. |
-| `src/render.rs` | Model matrix (`create_model_matrix`), orbit camera, framing, and the vertex transform that fills `transformed_position`. |
-| `src/triangle.rs` | `triangle` (outline), `triangle_filled_barycentric` and `triangle_filled_scanline` return a triangle's fragments. |
-| `src/rasterizer.rs` | `TriangleMode` and `rasterize`, which turns every triangle into fragments in the chosen mode. |
-| `src/primitive.rs` | Primitive assembly: groups vertices three at a time. |
-| `src/shaders.rs` | `vertex_shader` (applies the model matrix) and `fragment_shader` (passthrough). |
-| `src/laboratorio.rs` | Test scene, screenshots and measurements for the fill lab. |
-| `src/line.rs` | `line` (Bresenham) returns the fragments of a line. |
-| `src/fragment.rs` | `Fragment`: a pixel candidate with position, color and depth. |
-| `src/framebuffer.rs` | Color buffer and z-buffer; `init_texture` / `swap_buffers` show it in the window. |
-| `src/color.rs` | 8-bit RGB color. |
-| `src/main.rs` | `Uniforms`, the four-stage `render` function and the test scene. |
-| `src/visor.rs` | Spaceship viewer: loads the model, handles the camera and input. |
-| `src/vertices.rs` | Warm-up exercise with `Vector2` and `Vector3`. |
+| `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. `get_vertex_array()` devuelve los vértices ordenados por caras. |
+| `src/vertex.rs` | `Vertex` con su `position` original, `color` y `transformed_position` en coordenadas de pantalla. |
+| `src/render.rs` | Matriz de modelo (`create_model_matrix`), cámara orbital, encuadre y la transformación que llena `transformed_position`. |
+| `src/triangle.rs` | `triangle` (contorno), `triangle_filled_barycentric` y `triangle_filled_scanline` devuelven los fragmentos de un triángulo. |
+| `src/rasterizer.rs` | `TriangleMode` y `rasterize`, que genera los fragmentos de todos los triángulos en el modo elegido. |
+| `src/primitive.rs` | Ensamblaje de primitivas: agrupa los vértices de tres en tres. |
+| `src/shaders.rs` | `vertex_shader` (aplica la matriz de modelo) y `fragment_shader` (passthrough). |
+| `src/laboratorio.rs` | Escena de prueba, capturas y mediciones del laboratorio de relleno. |
+| `src/line.rs` | `line` (algoritmo de Bresenham) devuelve los fragmentos de una línea. |
+| `src/fragment.rs` | `Fragment`: candidato a píxel con posición, color y profundidad. |
+| `src/framebuffer.rs` | Buffer de color y z-buffer propios; `init_texture` / `swap_buffers` lo muestran en la ventana. |
+| `src/color.rs` | Color RGB de 8 bits por canal. |
+| `src/main.rs` | `Uniforms`, la función `render` (pipeline de 4 etapas) y la escena de prueba. |
+| `src/visor.rs` | Visor de la nave: carga el modelo y maneja la cámara y la entrada. |
+| `src/vertices.rs` | Ejercicio de la fase de vértices (`Vector2` y `Vector3`). |
 
-## Lab: filling triangles
+## Laboratorio: rellenar triángulos
 
-`rasterize` takes a `TriangleMode`:
+`rasterize` recibe un `TriangleMode`:
 
 ```rust
 pub enum TriangleMode { Wireframe, FilledBarycentric, FilledScanline }
 ```
 
-Primitive assembly and fragment processing stay the same; only the way each triangle
-becomes fragments changes.
+El ensamblaje de primitivas y el procesamiento de fragmentos no cambian; solo cambia
+cómo cada triángulo se convierte en fragmentos.
 
-### One image per mode
+### Imágenes de cada modo
 
-Test scene: a small triangle (yellow), a large one (blue), one with a horizontal edge
-(green), one with a vertical edge (pink), the same one with its vertices in reverse order
-(purple, 180 px lower), one partially outside the framebuffer (orange) and three collinear
-vertices (red).
+Escena de prueba: triángulo pequeño (amarillo), grande (azul), con borde horizontal
+(verde), con borde vertical (rosa), el mismo con sus vértices en orden inverso (morado,
+180 px más abajo), parcialmente fuera del framebuffer (naranja) y tres vértices sobre una
+misma línea (rojo).
 
 | Wireframe | FilledBarycentric | FilledScanline |
 |---|---|---|
-| ![Wireframe](docs/relleno_wireframe.png) | ![Barycentric](docs/relleno_filledbarycentric.png) | ![Scanline](docs/relleno_filledscanline.png) |
+| ![Wireframe](docs/relleno_wireframe.png) | ![Baricéntrico](docs/relleno_filledbarycentric.png) | ![Scanline](docs/relleno_filledscanline.png) |
 
-The red triangle (collinear vertices) only shows up in wireframe: its area is zero, so the
-fill modes treat it as degenerate, generate no fragments and never divide by zero. The
-purple triangle covers exactly the same positions as the pink one.
+El triángulo rojo (vértices colineales) solo aparece en wireframe: su área es cero, así
+que los rellenos lo tratan como degenerado, no generan fragmentos y no dividen entre
+cero. El morado tiene exactamente las mismas posiciones que el rosa.
 
-### The two algorithms
+### Los dos algoritmos
 
-- **Barycentric:** walks the triangle's bounding box and, for the center of each pixel
-  `(x + 0.5, y + 0.5)`, computes its three barycentric coordinates (using edge functions).
-  If all three say the center is inside, it emits a fragment.
-- **Scanline:** for each row, finds where the edges cross it and emits the fragments between
-  those two ends, without testing the pixels in between.
+- **Baricéntrico:** recorre el rectángulo que envuelve al triángulo y, para el centro de
+  cada píxel `(x + 0.5, y + 0.5)`, calcula sus tres coordenadas baricéntricas (con
+  *edge functions*). Si las tres indican que el centro está adentro, genera un fragmento.
+- **Scanline:** para cada fila calcula dónde la cruzan las aristas y genera los fragmentos
+  entre esos dos extremos, sin evaluar los píxeles del interior.
 
-**One rule for the edges.** Both use the same inside test, with the *top-left* rule for
-centers that land exactly on an edge: they are only drawn if the edge is a top or left edge.
-That way two triangles sharing an edge leave no gaps and never emit the same pixel twice; a
-test with a square split along its diagonal gets exactly 100 pixels with no repeats.
+**Una sola regla para los bordes.** Los dos usan la misma prueba para decidir si un centro
+está dentro, con la regla *top-left* para los centros que caen justo sobre una arista: se
+dibujan solo si la arista es superior o izquierda. Así, dos triángulos que comparten una
+arista no dejan huecos ni generan el mismo píxel dos veces; un test con un cuadrado
+dividido por su diagonal da exactamente 100 píxeles sin repetir.
 
-The scanline computes each row's ends with a division, which can have rounding errors, and
-then adjusts only those ends with the same test the barycentric fill uses. That is why both
-algorithms produce **exactly the same positions**. The tests check it for every scene case
-and for 500 random triangles, and the benchmark checks it on the whole spaceship. The two
-filled images are identical pixel for pixel.
+El scanline calcula los extremos de cada fila con una división, que puede tener errores
+de redondeo, y después ajusta solo esos extremos con la misma prueba del baricéntrico.
+Por eso los dos algoritmos generan **exactamente las mismas posiciones**. Los tests lo
+comprueban con cada caso de la escena y con 500 triángulos aleatorios, y la medición lo
+comprueba con la nave completa. Las imágenes de los dos rellenos son idénticas píxel por
+píxel.
 
-If the vertices come in the opposite order, two of them are swapped so the area is
-positive, and the triangle does not disappear.
+Si los vértices vienen en el orden contrario, se intercambian dos para que el área sea
+positiva; el triángulo no desaparece.
 
-### Measurements
+### Mediciones
 
-`cargo run --release -- --benchmark-triangles`. Only `rasterize` is measured (generating and
-storing the fragments): the triangles are prepared beforehand and no window is drawn. Each
-measurement runs `rasterize` several times with `black_box`; the table shows the median of 7
-measurements. Full output in [`docs/benchmark.txt`](docs/benchmark.txt).
+`cargo run --release -- --benchmark-triangles`. Solo se mide `rasterize` (generar y
+guardar los fragmentos): los triángulos se preparan antes y no se dibuja ninguna ventana.
+Cada medición ejecuta `rasterize` varias veces con `black_box`; se reporta la mediana de 7
+mediciones. La salida completa está en [`docs/benchmark.txt`](docs/benchmark.txt).
 
-| Case | Mode | Time per run | Fragments | ns per fragment |
+| Caso | Modo | Tiempo por ejecución | Fragmentos | ns por fragmento |
 |---|---|---:|---:|---:|
-| Test scene (7 triangles) | Wireframe | 0.010 ms | 3,735 | 2.72 |
-| Test scene (7 triangles) | FilledBarycentric | 1.98 ms | 149,465 | 13.23 |
-| Test scene (7 triangles) | FilledScanline | 1.37 ms | 149,465 | 9.16 |
-| Large triangles (500) | Wireframe | 1.39 ms | 124,242 | 11.22 |
-| Large triangles (500) | FilledBarycentric | 28.98 ms | 1,348,422 | 21.49 |
-| Large triangles (500) | FilledScanline | 18.66 ms | 1,348,422 | 13.84 |
-| Spaceship (573,439 triangles) | Wireframe | 115.05 ms | 4,441,533 | 25.90 |
-| Spaceship (573,439 triangles) | FilledBarycentric | 36.63 ms | 495,722 | 73.90 |
-| Spaceship (573,439 triangles) | FilledScanline | 56.99 ms | 495,722 | 114.97 |
+| Escena de prueba (7 triángulos) | Wireframe | 0.010 ms | 3,735 | 2.72 |
+| Escena de prueba (7 triángulos) | FilledBarycentric | 1.98 ms | 149,465 | 13.23 |
+| Escena de prueba (7 triángulos) | FilledScanline | 1.37 ms | 149,465 | 9.16 |
+| Triángulos grandes (500) | Wireframe | 1.39 ms | 124,242 | 11.22 |
+| Triángulos grandes (500) | FilledBarycentric | 28.98 ms | 1,348,422 | 21.49 |
+| Triángulos grandes (500) | FilledScanline | 18.66 ms | 1,348,422 | 13.84 |
+| Nave (573,439 triángulos) | Wireframe | 115.05 ms | 4,441,533 | 25.90 |
+| Nave (573,439 triángulos) | FilledBarycentric | 36.63 ms | 495,722 | 73.90 |
+| Nave (573,439 triángulos) | FilledScanline | 56.99 ms | 495,722 | 114.97 |
 
-Both fills produce the same number of fragments in every case, so the comparison is fair:
-neither one looks faster by skipping part of the triangle.
+Los dos rellenos generan la misma cantidad de fragmentos en cada caso, así que la
+comparación es justa: ninguno es más rápido por omitir parte del triángulo.
 
-### What we found
+### Diferencias que encontramos
 
-1. **With large triangles, scanline wins (~1.5× faster).** The barycentric fill evaluates
-   three edge functions for every pixel in the bounding box, and about half of that box lies
-   outside the triangle: wasted work. Scanline only computes the two ends of each row and
-   then appends fragments without testing anything.
-2. **With the spaceship, barycentric wins (~1.6× faster).** Its triangles are tiny: on
-   average they produce **less than one fragment** each (495,722 fragments for 573,439
-   triangles). What matters there is the fixed cost per triangle, not the cost per pixel.
-   The barycentric bounding box usually holds 0 or 1 pixels, while scanline computes the
-   crossings with all three edges and adjusts the ends of each row.
-3. **For the spaceship, filling is ~3× faster than wireframe.** Every line emits at least
-   one fragment per endpoint, so a tiny triangle produces several fragments as an outline
-   (4.4M in total) and almost none when filled.
-4. **Storing the fragments costs as much as computing them.** To check this, we repeated
-   the large-triangle measurement reusing the same `Vec` instead of creating a new one on
-   every run: scanline went from ~20 ms to ~5 ms and barycentric from ~31 ms to ~15 ms. With
-   large triangles, ~75 % of the scanline time goes to requesting fresh memory from the OS
-   and filling it (a ~32 MB `Vec` per run), not to the algorithm. Without that cost,
-   scanline is ~3× faster than barycentric.
+1. **Con triángulos grandes gana el scanline (~1.5× más rápido).** El baricéntrico evalúa
+   tres *edge functions* en cada píxel del rectángulo que envuelve al triángulo, y cerca
+   de la mitad de ese rectángulo queda fuera del triángulo: trabajo desperdiciado. El
+   scanline solo calcula los dos extremos de cada fila y luego agrega fragmentos sin
+   evaluar nada.
+2. **Con la nave gana el baricéntrico (~1.6× más rápido).** Sus triángulos son diminutos:
+   en promedio generan **menos de un fragmento** (495,722 fragmentos para 573,439
+   triángulos). Ahí pesa el trabajo fijo por triángulo, no el trabajo por píxel. El
+   rectángulo del baricéntrico casi siempre tiene 0 o 1 píxeles, mientras que el scanline
+   calcula cruces con las tres aristas y ajusta los extremos de cada fila.
+3. **Para la nave, rellenar es ~3× más rápido que el wireframe.** Cada línea genera al
+   menos un fragmento por extremo, así que un triángulo diminuto produce varios
+   fragmentos en contorno (4.4M en total) y casi ninguno relleno.
+4. **Guardar los fragmentos cuesta tanto como calcularlos.** Para investigarlo, repetimos
+   la medición de los triángulos grandes reutilizando el mismo `Vec` en lugar de crear uno
+   nuevo en cada ejecución: el scanline bajó de ~20 ms a ~5 ms y el baricéntrico de
+   ~31 ms a ~15 ms. Con triángulos grandes, ~75 % del tiempo del scanline se va en pedir
+   memoria nueva al sistema y llenarla (un `Vec` de ~32 MB por ejecución), no en el
+   algoritmo. Sin ese costo, el scanline es ~3× más rápido que el baricéntrico.
 
-### Profile
+### Perfil
 
 ```sh
 cargo install flamegraph
-cargo flamegraph -- --benchmark-triangles   # from an administrator terminal
+cargo flamegraph -- --benchmark-triangles   # en una terminal de administrador
 ```
 
-On Windows, `cargo flamegraph` needs administrator rights to read the system's performance
-events. `Cargo.toml` sets `debug = true` in the release profile so the profile shows function
-names; it does not change optimization.
+En Windows, `cargo flamegraph` necesita permisos de administrador para leer los eventos
+de rendimiento del sistema. `Cargo.toml` activa `debug = true` en el perfil release para
+que el perfil muestre los nombres de las funciones; no cambia la optimización.
 
-[![Flamegraph of --benchmark-triangles](docs/flamegraph.svg)](docs/flamegraph.svg)
+[![Flamegraph de --benchmark-triangles](docs/flamegraph.svg)](docs/flamegraph.svg)
 
-Open [`docs/flamegraph.svg`](docs/flamegraph.svg) in a browser to zoom in and search for
-functions. A block's width is the share of samples in which that function appeared, not the
-order in which it ran.
+Abre [`docs/flamegraph.svg`](docs/flamegraph.svg) en el navegador para hacer zoom y
+buscar funciones. El ancho de cada bloque es la proporción de muestras en las que apareció
+esa función, no el orden en que se ejecutó.
 
-`rasterize` appears in 93 % of the samples; the rest is preparing the spaceship's triangles
-and comparing positions. Inside each fill, the time splits like this:
+`rasterize` aparece en el 93 % de las muestras; el resto es preparar los triángulos de la
+nave y comparar las posiciones. Dentro de cada relleno, el tiempo se reparte así:
 
-| Inside… | Inside test (`dentro`, `edge`, `pasa`) | Writing the fragment (`Vec::push`) | Growing the `Vec` (`reserve` → `grow_amortized` → OS) | Edge crossings (`tramo`) |
+| Dentro de… | Prueba "¿está adentro?" (`dentro`, `edge`, `pasa`) | Escribir el fragmento (`Vec::push`) | Hacer crecer el `Vec` (`reserve` → `grow_amortized` → sistema) | Cruces de aristas (`tramo`) |
 |---|---:|---:|---:|---:|
-| `triangle_filled_barycentric_into` (52 % of total) | 38 % | 29 % | 23 % | — |
-| `triangle_filled_scanline_into` (37 % of total) | 2 % | 49 % | 33 % | 8 % |
+| `triangle_filled_barycentric_into` (52 % del total) | 38 % | 29 % | 23 % | — |
+| `triangle_filled_scanline_into` (37 % del total) | 2 % | 49 % | 33 % | 8 % |
 
-- **Barycentric:** the geometry is its largest part (38 %): the three edge functions it
-  evaluates for every pixel in the bounding box, including those outside the triangle.
-- **Scanline:** it barely does any geometry (10 % between `tramo` and `dentro`); **82 % of its
-  time is memory**: writing fragments and growing the `Vec`.
-- The unnamed blocks (`0x7FF9…`) are Windows functions (`ntdll`) that show up when the `Vec`
-  is copied into a larger block and when it is freed.
+- **Baricéntrico:** el cálculo geométrico es su parte más grande (38 %): las tres *edge
+  functions* que evalúa en cada píxel del rectángulo, incluidos los que quedan fuera.
+- **Scanline:** casi no hace cálculos geométricos (10 % entre `tramo` y `dentro`); el
+  **82 % de su tiempo es memoria**: escribir los fragmentos y hacer crecer el `Vec`.
+- Los bloques sin nombre (`0x7FF9…`) son funciones de Windows (`ntdll`) que aparecen al
+  copiar el `Vec` a un bloque más grande y al liberarlo.
 
-This confirms the experiment in the previous section: in this renderer, creating and storing
-fragments costs more than deciding which pixels a triangle covers. The biggest improvement
-would no longer come from the fill algorithm, but from not storing every fragment in a `Vec`
-(for example, reusing the same `Vec` across frames, or writing each fragment as soon as it is
-generated).
+Esto confirma el experimento de la sección anterior: en este renderer, crear y guardar
+fragmentos cuesta más que decidir qué píxeles cubre el triángulo. La mejora más grande ya
+no estaría en el algoritmo de relleno, sino en no guardar todos los fragmentos en un `Vec`
+(por ejemplo, reutilizar el mismo `Vec` entre cuadros o escribir cada fragmento en cuanto se
+genera).
+
+### Preguntas del laboratorio
+
+**¿Cómo determinan qué posiciones de la imagen están dentro de un triángulo?**
+Se evalúa el centro de cada píxel, `(x + 0.5, y + 0.5)`. Con las tres *edge functions* se
+obtienen sus coordenadas baricéntricas sin normalizar, `w0`, `w1` y `w2`; las
+baricéntricas son `w0 / área`, `w1 / área` y `w2 / área`. Si las tres son positivas, el
+centro está dentro. Si alguna es cero, el centro cae justo sobre una arista y decide la
+regla top-left (ver abajo).
+
+**Si invierten el orden de los vértices, ¿desaparece el triángulo?**
+No. Con el orden invertido el área sale negativa y todas las `w` cambian de signo, así que
+la prueba "las tres positivas" fallaría siempre. Para evitarlo, si el área es negativa se
+intercambian dos vértices antes de rellenar. En la escena, el triángulo morado es el rosa
+con sus vértices en orden inverso y cubre exactamente los mismos 12,800 píxeles.
+
+**¿Qué hacen si el área del triángulo es cero?**
+Lo tratan como degenerado: `Relleno::new` devuelve `None` y no se genera ningún fragmento,
+así que nunca se divide entre el área. Es el caso de los tres vértices sobre una misma línea
+(el triángulo rojo): en wireframe se ve como una línea y relleno no aparece.
+
+**¿Cómo tratan las aristas horizontales y los vértices que coinciden exactamente con una
+fila?**
+- **Aristas horizontales:** en el scanline, una arista horizontal no tiene un cruce con la
+  fila (dividir entre su altura sería dividir entre cero). Si está justo sobre la fila, se
+  toman sus dos extremos como límites del tramo; si no, se ignora.
+- **Vértices sobre una fila:** cuando la fila pasa exactamente por un vértice, las dos
+  aristas que llegan a él dan el mismo cruce, y el tramo se calcula una sola vez por fila,
+  así que no se duplican fragmentos.
+- **Centros sobre una arista:** se dibujan solo si la arista es **superior** (horizontal,
+  con el triángulo debajo) o **izquierda**. Es la regla *top-left* que usan las GPUs. Sin
+  una regla así, dos triángulos que comparten una arista dejan huecos (si ninguno dibuja
+  esos píxeles) o fragmentos duplicados (si los dos los dibujan). El test
+  `shared_edge_has_no_gaps_and_no_duplicates` divide un cuadrado de 10 × 10 por su diagonal,
+  que pasa justo por centros de píxeles, y obtiene exactamente 100 fragmentos sin repetir.
+
+**¿Producen los dos algoritmos la misma figura? Si hay diferencias en un borde, ¿qué regla
+usa cada implementación?**
+Producen **exactamente las mismas posiciones**, porque usan la misma regla para los bordes.
+El baricéntrico aplica la prueba a cada píxel del rectángulo que envuelve al triángulo. El
+scanline calcula los extremos de cada fila con una división; como esa división puede tener
+errores de redondeo justo en los bordes, después ajusta **solo los extremos** con la misma
+prueba del baricéntrico. Los píxeles del interior del tramo no se evalúan.
+
+Sin ese ajuste, la división podría dejar fuera o meter de más un píxel cuyo centro cae
+justo sobre una arista, y ahí los dos algoritmos diferirían. Se
+comparan las posiciones, no solo la imagen: los tests lo comprueban en cada caso de la escena
+y con 500 triángulos aleatorios, `--benchmark-triangles` lo comprueba con los 573,439
+triángulos de la nave, y las dos imágenes rellenas son idénticas píxel por píxel.
+
+**¿Por qué registrar cuántos fragmentos produce cada algoritmo?**
+Porque una versión que omite parte del triángulo parecería más rápida solo por hacer menos
+trabajo. Aquí los dos rellenos producen la misma cantidad de fragmentos en cada caso (por
+ejemplo, 1,348,422 con los triángulos grandes), así que la diferencia de tiempo se debe al
+algoritmo.
+
+**En el flamegraph, ¿qué ocupa más espacio: los cálculos geométricos, la creación de
+fragmentos o el crecimiento del `Vec`?**
+Depende del algoritmo (ver la tabla de la sección "Perfil"):
+- **Baricéntrico:** lo más grande son los **cálculos geométricos** (38 %), por evaluar tres
+  *edge functions* en cada píxel del rectángulo; le siguen la creación de fragmentos (29 %)
+  y el crecimiento del `Vec` (23 %).
+- **Scanline:** casi no hace cálculos geométricos (10 %); lo que domina es la **creación de
+  fragmentos** (49 %) y el **crecimiento del `Vec`** (33 %).
+
+Sumando las dos, el manejo de memoria es la mayor parte del tiempo de rasterización en este
+renderer.
+
+**¿Cuál algoritmo conviene?**
+Depende del tamaño de los triángulos. Con triángulos grandes, el scanline es ~1.5× más
+rápido porque no evalúa los píxeles que quedan fuera del triángulo. Con triángulos diminutos,
+como los de la nave (menos de un fragmento por triángulo en promedio), gana el baricéntrico
+porque su trabajo fijo por triángulo es menor.
