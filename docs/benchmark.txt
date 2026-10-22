@@ -1,0 +1,17 @@
+Mediana de 7 mediciones; cada medición ejecuta rasterize varias veces.
+
+| Caso | Modo | Tiempo por ejecución | Fragmentos | ns por fragmento |
+|---|---|---:|---:|---:|
+| Escena de prueba (7 triángulos) | Wireframe | 10.145µs | 3735 | 2.72 |
+| Escena de prueba (7 triángulos) | FilledBarycentric | 1.978ms | 149465 | 13.23 |
+| Escena de prueba (7 triángulos) | FilledScanline | 1.368ms | 149465 | 9.16 |
+| Triángulos grandes (500) | Wireframe | 1.394ms | 124242 | 11.22 |
+| Triángulos grandes (500) | FilledBarycentric | 28.981ms | 1348422 | 21.49 |
+| Triángulos grandes (500) | FilledScanline | 18.660ms | 1348422 | 13.84 |
+| Nave (573,439 triángulos) | Wireframe | 115.045ms | 4441533 | 25.90 |
+| Nave (573,439 triángulos) | FilledBarycentric | 36.632ms | 495722 | 73.90 |
+| Nave (573,439 triángulos) | FilledScanline | 56.992ms | 495722 | 114.97 |
+
+Escena de prueba (7 triángulos): posiciones de FilledBarycentric y FilledScanline idénticas
+Triángulos grandes (500): posiciones de FilledBarycentric y FilledScanline idénticas
+Nave (573,439 triángulos): posiciones de FilledBarycentric y FilledScanline idénticas
