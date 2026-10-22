@@ -123,7 +123,7 @@ mediciones. La salida completa está en [`docs/benchmark.txt`](docs/benchmark.tx
 Los dos rellenos generan la misma cantidad de fragmentos en cada caso, así que la
 comparación es justa: ninguno es más rápido por omitir parte del triángulo.
 
-## Diferencias que encontramos
+## Diferencias encontradas
 
 1. **Con triángulos grandes gana el scanline (~1.5× más rápido).** El baricéntrico evalúa
    tres *edge functions* en cada píxel del rectángulo que envuelve al triángulo, y cerca
@@ -138,7 +138,7 @@ comparación es justa: ninguno es más rápido por omitir parte del triángulo.
 3. **Para la nave, rellenar es ~3× más rápido que el wireframe.** Cada línea genera al
    menos un fragmento por extremo, así que un triángulo diminuto produce varios
    fragmentos en contorno (4.4M en total) y casi ninguno relleno.
-4. **Guardar los fragmentos cuesta tanto como calcularlos.** Para investigarlo, repetimos
+4. **Guardar los fragmentos cuesta tanto como calcularlos.** Para investigarlo, se repitió
    la medición de los triángulos grandes reutilizando el mismo `Vec` en lugar de crear uno
    nuevo en cada ejecución: el scanline bajó de ~20 ms a ~5 ms y el baricéntrico de
    ~31 ms a ~15 ms. Con triángulos grandes, ~75 % del tiempo del scanline se va en pedir
