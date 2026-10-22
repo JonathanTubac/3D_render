@@ -16,7 +16,7 @@ use color::Color;
 use crate::fragment::Fragment;
 use framebuffer::Framebuffer;
 use obj::{load_obj, Obj};
-use render::{draw_obj_wireframe, Camara, Encuadre};
+use render::{centrar, create_model_matrix, draw_obj_wireframe, Camara, Encuadre};
 
 const ANCHO: usize = 1024;
 const ALTO: usize = 768;
@@ -34,6 +34,22 @@ const ZOOM_MIN: f32 = 0.2;
 const ZOOM_MAX: f32 = 8.0;
 
 const AYUDA: &str = "Arrastrar / flechas: rotar   Rueda: zoom   R: reiniciar";
+
+/// Parámetros que comparten todos los vértices y fragmentos de un mismo dibujo.
+/// Pueden cambiar entre un dibujo y otro, pero no durante el dibujo.
+pub struct Uniforms {
+    pub model_matrix: Matrix,
+}
+
+/// Prepara los uniforms de un dibujo a partir del estado de la cámara.
+fn preparar_uniforms(camara: &Camara, encuadre: &Encuadre) -> Uniforms {
+    let translation = Vector3::new(ANCHO as f32 / 2.0, ALTO as f32 / 2.0, 0.0);
+    let scale = encuadre.escala * camara.zoom;
+    let rotation = Vector3::new(camara.pitch, camara.yaw, 0.0);
+
+    let model_matrix = create_model_matrix(translation, scale, rotation);
+    Uniforms { model_matrix }
+}
 
 /// Ajusta la cámara según el teclado y el mouse; `R` la regresa a `inicial`.
 /// Devuelve `true` si cambió.
@@ -90,10 +106,10 @@ fn fragmentos_de_prueba() -> Vec<Fragment> {
     fragments
 }
 
-fn render(fb: &mut Framebuffer, modelo: &Obj, encuadre: &Encuadre, camara: &Camara) {
+fn render(fb: &mut Framebuffer, uniforms: &Uniforms, modelo: &Obj) {
     fb.clear();
     fb.set_current_color(COLOR_MODELO);
-    draw_obj_wireframe(fb, modelo, encuadre, camara);
+    draw_obj_wireframe(fb, uniforms, modelo);
 
     // Crear los fragmentos no modifica la imagen; se escriben al recorrerlos.
     for fragment in &fragmentos_de_prueba() {
@@ -104,13 +120,14 @@ fn render(fb: &mut Framebuffer, modelo: &Obj, encuadre: &Encuadre, camara: &Cama
 
 fn main() -> std::io::Result<()> {
     let inicio = Instant::now();
-    let modelo = load_obj(MODELO)?;
+    let mut modelo = load_obj(MODELO)?;
     println!(
         "{MODELO}: {} vértices, {} triángulos (cargado en {:.2?})",
         modelo.vertices.len(),
         modelo.triangle_count(),
         inicio.elapsed()
     );
+    centrar(&mut modelo.vertices);
     let encuadre = Encuadre::new(&modelo.vertices, ANCHO as f32, ALTO as f32);
 
     let mut fb = Framebuffer::new(ANCHO, ALTO);
@@ -118,7 +135,8 @@ fn main() -> std::io::Result<()> {
 
     // La captura siempre es la vista de frente, ocupando toda la pantalla.
     let inicio = Instant::now();
-    render(&mut fb, &modelo, &encuadre, &Camara::default());
+    let uniforms = preparar_uniforms(&Camara::default(), &encuadre);
+    render(&mut fb, &uniforms, &modelo);
     println!("Dibujado en {:.2?}", inicio.elapsed());
 
     let imagen = fb.to_image();
@@ -158,7 +176,9 @@ fn main() -> std::io::Result<()> {
         // Solo se vuelve a dibujar el modelo cuando la cámara se mueve.
         if redibujar {
             redibujar = false;
-            render(&mut fb, &modelo, &encuadre, &camara);
+            // La cámara cambió: se recalcula la matriz de modelo para este dibujo.
+            let uniforms = preparar_uniforms(&camara, &encuadre);
+            render(&mut fb, &uniforms, &modelo);
             fb.write_rgba(&mut pixeles);
             textura
                 .update_texture(&pixeles)
