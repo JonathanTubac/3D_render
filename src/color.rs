@@ -25,7 +25,9 @@ impl Color {
 
     /// Crea un color a partir de valores flotantes en el rango [0.0, 1.0].
     pub fn from_float(r: f32, g: f32, b: f32) -> Self {
-        let to_u8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        // Sumar 0.5 y truncar redondea igual que `round()` para valores positivos, pero
+        // es mucho más barato; esta función se llama una vez por cada fragmento.
+        let to_u8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
         Color::new(to_u8(r), to_u8(g), to_u8(b))
     }
 }

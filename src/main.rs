@@ -4,36 +4,18 @@ mod framebuffer;
 mod line;
 mod obj;
 mod render;
+mod triangle;
+mod vertex;
 // Ejercicio de la fase de vértices; el renderer no lo utiliza.
 #[allow(dead_code)]
 mod vertices;
-
-use std::time::Instant;
+mod visor;
 
 use raylib::prelude::*;
 
-use color::Color;
-use crate::fragment::Fragment;
 use framebuffer::Framebuffer;
-use obj::{load_obj, Obj};
-use render::{centrar, create_model_matrix, draw_obj_wireframe, Camara, Encuadre};
-
-const ANCHO: usize = 1024;
-const ALTO: usize = 768;
-const MODELO: &str = "spaceship.obj";
-const CAPTURA: &str = "screenshot.png";
-const COLOR_MODELO: Color = Color::from_hex(0x6BE4FF);
-
-/// Radianes que gira la cámara por cada pixel que se arrastra el mouse.
-const SENSIBILIDAD_MOUSE: f32 = 0.01;
-/// Radianes por segundo que gira la cámara con las flechas.
-const VELOCIDAD_TECLAS: f32 = 1.5;
-/// Cuánto cambia el zoom por cada paso de la rueda del mouse.
-const PASO_ZOOM: f32 = 1.1;
-const ZOOM_MIN: f32 = 0.2;
-const ZOOM_MAX: f32 = 8.0;
-
-const AYUDA: &str = "Arrastrar / flechas: rotar   Rueda: zoom   R: reiniciar";
+use triangle::triangle;
+use vertex::Vertex;
 
 /// Parámetros que comparten todos los vértices y fragmentos de un mismo dibujo.
 /// Pueden cambiar entre un dibujo y otro, pero no durante el dibujo.
@@ -41,154 +23,73 @@ pub struct Uniforms {
     pub model_matrix: Matrix,
 }
 
-/// Prepara los uniforms de un dibujo a partir del estado de la cámara.
-fn preparar_uniforms(camara: &Camara, encuadre: &Encuadre) -> Uniforms {
-    let translation = Vector3::new(ANCHO as f32 / 2.0, ALTO as f32 / 2.0, 0.0);
-    let scale = encuadre.escala * camara.zoom;
-    let rotation = Vector3::new(camara.pitch, camara.yaw, 0.0);
+/// Dibuja los triángulos de `vertex_array`: cada grupo de tres vértices
+/// consecutivos es un triángulo. Usa `transformed_position` de cada vértice.
+fn render(framebuffer: &mut Framebuffer, _uniforms: &Uniforms, vertex_array: &[Vertex]) {
+    for vertices in vertex_array.chunks_exact(3) {
+        let fragments = triangle(&vertices[0], &vertices[1], &vertices[2]);
 
-    let model_matrix = create_model_matrix(translation, scale, rotation);
-    Uniforms { model_matrix }
-}
-
-/// Ajusta la cámara según el teclado y el mouse; `R` la regresa a `inicial`.
-/// Devuelve `true` si cambió.
-fn actualizar_camara(rl: &RaylibHandle, camara: &mut Camara, inicial: &Camara) -> bool {
-    let anterior = *camara;
-
-    if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-        let delta = rl.get_mouse_delta();
-        camara.yaw += delta.x * SENSIBILIDAD_MOUSE;
-        camara.pitch += delta.y * SENSIBILIDAD_MOUSE;
-    }
-
-    let paso = VELOCIDAD_TECLAS * rl.get_frame_time();
-    if rl.is_key_down(KeyboardKey::KEY_LEFT) {
-        camara.yaw -= paso;
-    }
-    if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
-        camara.yaw += paso;
-    }
-    if rl.is_key_down(KeyboardKey::KEY_UP) {
-        camara.pitch -= paso;
-    }
-    if rl.is_key_down(KeyboardKey::KEY_DOWN) {
-        camara.pitch += paso;
-    }
-
-    let rueda = rl.get_mouse_wheel_move();
-    if rueda != 0.0 {
-        camara.zoom = (camara.zoom * PASO_ZOOM.powf(rueda)).clamp(ZOOM_MIN, ZOOM_MAX);
-    }
-
-    if rl.is_key_pressed(KeyboardKey::KEY_R) {
-        *camara = *inicial;
-    }
-
-    *camara != anterior
-}
-
-/// Fragmentos del ejercicio de la fase de fragmentos.
-fn fragmentos_de_prueba() -> Vec<Fragment> {
-    let mut fragments: Vec<Fragment> = Vec::new();
-
-    // Tres píxeles consecutivos: rojo, verde y azul.
-    fragments.push(Fragment::new(100.0, 80.0, Vector3::new(1.0, 0.0, 0.0), 0.0));
-    fragments.push(Fragment::new(101.0, 80.0, Vector3::new(0.0, 1.0, 0.0), 0.0));
-    fragments.push(Fragment::new(102.0, 80.0, Vector3::new(0.0, 0.0, 1.0), 0.0));
-
-    // Misma posición que el rojo: como se escribe después, queda amarillo.
-    fragments.push(Fragment::new(100.0, 80.0, Vector3::new(1.0, 1.0, 0.0), 0.0));
-
-    // Fuera del framebuffer: `point` lo descarta y no aparece en la imagen.
-    fragments.push(Fragment::new(-1.0, 80.0, Vector3::new(1.0, 1.0, 1.0), 0.0));
-
-    fragments
-}
-
-fn render(fb: &mut Framebuffer, uniforms: &Uniforms, modelo: &Obj) {
-    fb.clear();
-    fb.set_current_color(COLOR_MODELO);
-    draw_obj_wireframe(fb, uniforms, modelo);
-
-    // Crear los fragmentos no modifica la imagen; se escriben al recorrerlos.
-    for fragment in &fragmentos_de_prueba() {
-        fb.set_current_color(Color::from(fragment.color));
-        fb.point(fragment.position.x as i32, fragment.position.y as i32);
-    }
-}
-
-fn main() -> std::io::Result<()> {
-    let inicio = Instant::now();
-    let mut modelo = load_obj(MODELO)?;
-    println!(
-        "{MODELO}: {} vértices, {} triángulos (cargado en {:.2?})",
-        modelo.vertices.len(),
-        modelo.triangle_count(),
-        inicio.elapsed()
-    );
-    centrar(&mut modelo.vertices);
-    let encuadre = Encuadre::new(&modelo.vertices, ANCHO as f32, ALTO as f32);
-
-    let mut fb = Framebuffer::new(ANCHO, ALTO);
-    fb.set_background_color(Color::from_hex(0x0B0E1A));
-
-    // La captura siempre es la vista de frente, ocupando toda la pantalla.
-    let inicio = Instant::now();
-    let uniforms = preparar_uniforms(&Camara::default(), &encuadre);
-    render(&mut fb, &uniforms, &modelo);
-    println!("Dibujado en {:.2?}", inicio.elapsed());
-
-    let imagen = fb.to_image();
-    imagen.export_image(CAPTURA);
-    println!("Captura guardada en {CAPTURA}");
-
-    // `--no-window` solo genera la captura, sin abrir la ventana.
-    if std::env::args().any(|a| a == "--no-window") {
-        return Ok(());
-    }
-
-    let (mut rl, thread) = raylib::init()
-        .size(ANCHO as i32, ALTO as i32)
-        .title("Spaceship render")
-        .build();
-    rl.set_target_fps(60);
-
-    // El modelo se dibuja en nuestro framebuffer; la ventana solo muestra ese
-    // resultado como textura.
-    let mut textura = rl
-        .load_texture_from_image(&thread, &imagen)
-        .expect("no se pudo crear la textura del framebuffer");
-    let mut pixeles = Vec::new();
-
-    // En la ventana se aleja un poco la cámara para que el modelo no se salga
-    // de la pantalla al girarlo.
-    let inicial = Camara {
-        zoom: encuadre.zoom_cualquier_angulo(ANCHO as f32, ALTO as f32),
-        ..Camara::default()
-    };
-    let mut camara = inicial;
-    let mut redibujar = true;
-
-    while !rl.window_should_close() {
-        redibujar |= actualizar_camara(&rl, &mut camara, &inicial);
-
-        // Solo se vuelve a dibujar el modelo cuando la cámara se mueve.
-        if redibujar {
-            redibujar = false;
-            // La cámara cambió: se recalcula la matriz de modelo para este dibujo.
-            let uniforms = preparar_uniforms(&camara, &encuadre);
-            render(&mut fb, &uniforms, &modelo);
-            fb.write_rgba(&mut pixeles);
-            textura
-                .update_texture(&pixeles)
-                .expect("el framebuffer no coincide con el tamaño de la textura");
+        for fragment in fragments {
+            framebuffer.point(
+                fragment.position.x as i32,
+                fragment.position.y as i32,
+                fragment.color,
+            );
         }
-
-        let mut d = rl.begin_drawing(&thread);
-        d.draw_texture(&textura, 0, 0, raylib::prelude::Color::WHITE);
-        d.draw_text(AYUDA, 10, 10, 20, raylib::prelude::Color::LIGHTGRAY);
-        d.draw_fps(10, ALTO as i32 - 30);
     }
-    Ok(())
+}
+
+fn main() {
+    // `--nave` abre el visor de la nave del Proyecto 1 (con `--captura`, solo guarda la imagen).
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--nave") {
+        if let Err(e) = visor::ejecutar(args.iter().any(|a| a == "--captura")) {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    let (mut window, thread) = raylib::init()
+        .size(800, 600)
+        .title("Primer triangulo")
+        .build();
+
+    window.set_target_fps(60);
+
+    let mut framebuffer = Framebuffer::new(800, 600);
+    framebuffer.set_background_color(Vector3::new(0.0, 0.0, 0.0));
+    framebuffer.init_texture(&mut window, &thread);
+
+    let positions = [
+        // Primer triángulo.
+        Vector3::new(300.0, 200.0, 0.0),
+        Vector3::new(400.0, 400.0, 0.0),
+        Vector3::new(500.0, 200.0, 0.0),
+        // Segundo triángulo, en la misma llamada a render.
+        Vector3::new(550.0, 450.0, 0.0),
+        Vector3::new(700.0, 300.0, 0.0),
+        Vector3::new(750.0, 550.0, 0.0),
+    ];
+
+    let vertex_array: Vec<Vertex> = positions
+        .into_iter()
+        .map(|position| {
+            let mut vertex = Vertex::new_with_color(position, Vector3::new(1.0, 1.0, 1.0));
+
+            // Las posiciones ya están en coordenadas de pantalla.
+            vertex.transformed_position = position;
+            vertex
+        })
+        .collect();
+
+    let uniforms = Uniforms {
+        model_matrix: Matrix::identity(),
+    };
+
+    while !window.window_should_close() {
+        framebuffer.clear();
+        render(&mut framebuffer, &uniforms, &vertex_array);
+        framebuffer.swap_buffers(&mut window, &thread);
+    }
 }

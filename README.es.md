@@ -27,12 +27,14 @@ ventana sin salirse.
 
 Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa para compilar Raylib.
 
+Para abrir el visor de la nave:
+
 ```sh
-cargo run --release
+cargo run --release -- --nave
 ```
 
-Abre una ventana de 1024×768 con el modelo y guarda la captura (vista de frente) en
-`screenshot.png`.
+Abre una ventana de 1024×768 con el modelo. Usa `--release`: en modo debug dibujar
+573k triángulos es mucho más lento.
 
 ### Controles
 
@@ -44,11 +46,15 @@ Abre una ventana de 1024×768 con el modelo y guarda la captura (vista de frente
 
 La ventana arranca con el zoom necesario para que el modelo quepa completo desde
 cualquier ángulo. Solo se vuelve a dibujar cuando la cámara se mueve.
-Para generar solo la captura, sin abrir la ventana:
+
+Para guardar la vista de frente en `captura.png` sin abrir la ventana:
 
 ```sh
-cargo run --release -- --no-window
+cargo run --release -- --nave --captura
 ```
+
+Sin `--nave` (`cargo run`) se abre la prueba "primer triángulo" del curso: dos contornos
+blancos de triángulos definidos directamente en coordenadas de pantalla.
 
 Para correr los tests:
 
@@ -63,15 +69,19 @@ cargo test
 ## Cómo funciona
 
 ```
-spaceship.obj → vértices + índices → triángulos → líneas → píxeles → ventana
+spaceship.obj → Obj → arreglo de vértices → matriz de modelo (Uniforms) → triángulos → fragmentos → framebuffer → ventana
 ```
 
 | Archivo | Qué hace |
 |---|---|
-| `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. |
-| `src/render.rs` | Escala, centra y rota los vértices (cámara orbital, proyección ortográfica) y recorre los triángulos de tres en tres índices. |
-| `src/line.rs` | `line` (algoritmo de Bresenham) y `triangle` (tres llamadas a `line`). |
-| `src/framebuffer.rs` | Buffer de color y z-buffer propios; se convierte a una `Image` de Raylib para mostrarse o exportarse. |
+| `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. `get_vertex_array()` devuelve los vértices ordenados por caras. |
+| `src/vertex.rs` | `Vertex` con su `position` original, `color` y `transformed_position` en coordenadas de pantalla. |
+| `src/render.rs` | Matriz de modelo (`create_model_matrix`), cámara orbital, encuadre y la transformación que llena `transformed_position`. |
+| `src/triangle.rs` | `triangle` devuelve los fragmentos del contorno de un triángulo. |
+| `src/line.rs` | `line` (algoritmo de Bresenham) devuelve los fragmentos de una línea. |
+| `src/fragment.rs` | `Fragment`: candidato a píxel con posición, color y profundidad. |
+| `src/framebuffer.rs` | Buffer de color y z-buffer propios; `init_texture` / `swap_buffers` lo muestran en la ventana. |
 | `src/color.rs` | Color RGB de 8 bits por canal. |
-| `src/main.rs` | Carga el modelo, lo dibuja en el framebuffer, guarda la captura y abre la ventana. |
+| `src/main.rs` | `Uniforms`, la función `render` y la prueba del primer triángulo. |
+| `src/visor.rs` | Visor de la nave: carga el modelo y maneja la cámara y la entrada. |
 | `src/vertices.rs` | Ejercicio de la fase de vértices (`Vector2` y `Vector3`). |

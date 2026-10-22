@@ -2,7 +2,9 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
-use raylib::prelude::Image;
+use raylib::prelude::{
+    Image, RaylibDraw, RaylibDrawHandle, RaylibHandle, RaylibTexture2D, RaylibThread, Texture2D, Vector3,
+};
 
 use crate::color::Color;
 
@@ -18,7 +20,10 @@ pub struct Framebuffer {
     buffer: Vec<Color>,
     zbuffer: Vec<f32>,
     background_color: Color,
-    current_color: Color,
+    /// Textura donde se copia el buffer para mostrarlo en la ventana.
+    texture: Option<Texture2D>,
+    /// Bytes RGBA reutilizados en cada `swap_buffers` para no reservar memoria por frame.
+    rgba: Vec<u8>,
 }
 
 impl Framebuffer {
@@ -30,7 +35,8 @@ impl Framebuffer {
             buffer: vec![Color::BLACK; size],
             zbuffer: vec![f32::INFINITY; size],
             background_color: Color::BLACK,
-            current_color: Color::WHITE,
+            texture: None,
+            rgba: Vec::new(),
         }
     }
 
@@ -40,12 +46,9 @@ impl Framebuffer {
         self.zbuffer.fill(f32::INFINITY);
     }
 
-    pub fn set_background_color(&mut self, color: Color) {
-        self.background_color = color;
-    }
-
-    pub fn set_current_color(&mut self, color: Color) {
-        self.current_color = color;
+    /// Color de fondo con componentes r, g, b en [0.0, 1.0].
+    pub fn set_background_color(&mut self, color: Vector3) {
+        self.background_color = Color::from(color);
     }
 
     fn index(&self, x: i32, y: i32) -> Option<usize> {
@@ -55,21 +58,21 @@ impl Framebuffer {
         Some(y as usize * self.width + x as usize)
     }
 
-    /// Pinta un pixel con el color actual, sin prueba de profundidad.
+    /// Pinta un pixel con `color` (r, g, b en [0.0, 1.0]), sin prueba de profundidad.
     /// Las coordenadas fuera de pantalla se ignoran.
-    pub fn point(&mut self, x: i32, y: i32) {
+    pub fn point(&mut self, x: i32, y: i32, color: Vector3) {
         if let Some(i) = self.index(x, y) {
-            self.buffer[i] = self.current_color;
+            self.buffer[i] = Color::from(color);
         }
     }
 
     /// Pinta un pixel solo si `depth` está más cerca que lo que ya hay en el z-buffer.
     /// Devuelve `true` si el pixel se pintó.
-    pub fn point_with_depth(&mut self, x: i32, y: i32, depth: f32) -> bool {
+    pub fn point_with_depth(&mut self, x: i32, y: i32, depth: f32, color: Vector3) -> bool {
         match self.index(x, y) {
             Some(i) if depth < self.zbuffer[i] => {
                 self.zbuffer[i] = depth;
-                self.buffer[i] = self.current_color;
+                self.buffer[i] = Color::from(color);
                 true
             }
             _ => false,
@@ -97,14 +100,45 @@ impl Framebuffer {
         image
     }
 
-    /// Escribe el buffer de color en `out` como bytes RGBA, el formato que espera
-    /// una textura de Raylib. Reutilizar `out` evita reservar memoria en cada frame.
-    pub fn write_rgba(&self, out: &mut Vec<u8>) {
-        out.clear();
-        out.reserve(self.buffer.len() * 4);
+    /// Crea la textura con la que el framebuffer se muestra en la ventana.
+    /// Debe llamarse una vez, después de abrir la ventana y antes de `swap_buffers`.
+    pub fn init_texture(&mut self, window: &mut RaylibHandle, thread: &RaylibThread) {
+        let texture = window
+            .load_texture_from_image(thread, &self.to_image())
+            .expect("no se pudo crear la textura del framebuffer");
+        self.texture = Some(texture);
+    }
+
+    /// Copia el buffer de color a la textura y la dibuja en la ventana.
+    pub fn swap_buffers(&mut self, window: &mut RaylibHandle, thread: &RaylibThread) {
+        self.swap_buffers_with(window, thread, |_| {});
+    }
+
+    /// Igual que `swap_buffers`, pero después de dibujar la textura llama a `extra`
+    /// para dibujar algo encima, como texto de ayuda.
+    pub fn swap_buffers_with(
+        &mut self,
+        window: &mut RaylibHandle,
+        thread: &RaylibThread,
+        extra: impl FnOnce(&mut RaylibDrawHandle),
+    ) {
+        let texture = self
+            .texture
+            .as_mut()
+            .expect("llama a init_texture antes de swap_buffers");
+
+        // Bytes RGBA, el formato de la textura.
+        self.rgba.clear();
         for c in &self.buffer {
-            out.extend_from_slice(&[c.r, c.g, c.b, 255]);
+            self.rgba.extend_from_slice(&[c.r, c.g, c.b, 255]);
         }
+        texture
+            .update_texture(&self.rgba)
+            .expect("el framebuffer no coincide con el tamaño de la textura");
+
+        let mut d = window.begin_drawing(thread);
+        d.draw_texture(&*texture, 0, 0, raylib::prelude::Color::WHITE);
+        extra(&mut d);
     }
 
     /// Guarda el buffer de color como BMP de 24 bits sin compresión.
@@ -192,22 +226,22 @@ mod tests {
     #[test]
     fn clear_fills_background_and_resets_depth() {
         let mut fb = Framebuffer::new(4, 3);
-        fb.set_background_color(Color::new(10, 20, 30));
-        fb.point_with_depth(1, 1, 0.5);
+        fb.set_background_color(Vector3::new(0.0, 0.2, 1.0));
+        fb.point_with_depth(1, 1, 0.5, Vector3::new(1.0, 1.0, 1.0));
         fb.clear();
-        assert_eq!(fb.get_color(1, 1), Some(Color::new(10, 20, 30)));
+        assert_eq!(fb.get_color(1, 1), Some(Color::new(0, 51, 255)));
         assert_eq!(fb.get_depth(1, 1), Some(f32::INFINITY));
     }
 
     #[test]
     fn zbuffer_keeps_closest_fragment() {
         let mut fb = Framebuffer::new(2, 2);
-        fb.set_current_color(Color::new(255, 0, 0));
-        assert!(fb.point_with_depth(0, 0, 5.0));
-        fb.set_current_color(Color::new(0, 255, 0));
-        assert!(!fb.point_with_depth(0, 0, 10.0)); // más lejos: se descarta
+        let rojo = Vector3::new(1.0, 0.0, 0.0);
+        let verde = Vector3::new(0.0, 1.0, 0.0);
+        assert!(fb.point_with_depth(0, 0, 5.0, rojo));
+        assert!(!fb.point_with_depth(0, 0, 10.0, verde)); // más lejos: se descarta
         assert_eq!(fb.get_color(0, 0), Some(Color::new(255, 0, 0)));
-        assert!(fb.point_with_depth(0, 0, 1.0)); // más cerca: se pinta
+        assert!(fb.point_with_depth(0, 0, 1.0, verde)); // más cerca: se pinta
         assert_eq!(fb.get_color(0, 0), Some(Color::new(0, 255, 0)));
         assert_eq!(fb.get_depth(0, 0), Some(1.0));
     }
@@ -215,9 +249,10 @@ mod tests {
     #[test]
     fn out_of_bounds_is_ignored() {
         let mut fb = Framebuffer::new(2, 2);
-        fb.point(-1, 0);
-        fb.point(2, 0);
-        assert!(!fb.point_with_depth(0, 5, 0.0));
+        let blanco = Vector3::new(1.0, 1.0, 1.0);
+        fb.point(-1, 0, blanco);
+        fb.point(2, 0, blanco);
+        assert!(!fb.point_with_depth(0, 5, 0.0, blanco));
         assert_eq!(fb.get_color(5, 5), None);
     }
 

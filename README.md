@@ -36,18 +36,23 @@ The model is `spaceship.obj`, with 286,689 vertices and 573,439 triangles.
 
 Requirements: Rust (MSVC toolchain on Windows) and CMake, which the `raylib` crate uses to build Raylib.
 
-```sh
-cargo run --release
-```
-
-This opens a 1024×768 window with the model and saves a front view to `screenshot.png`.
-Use `--release`: drawing 573k triangles in a debug build is much slower.
-
-To only generate the image, without opening the window:
+To open the spaceship viewer:
 
 ```sh
-cargo run --release -- --no-window
+cargo run --release -- --nave
 ```
+
+This opens a 1024×768 window with the model. Use `--release`: drawing 573k triangles in a
+debug build is much slower.
+
+To save a front view to `captura.png` without opening the window:
+
+```sh
+cargo run --release -- --nave --captura
+```
+
+Running without `--nave` (`cargo run`) opens the course's "first triangle" test: two white
+triangle outlines defined directly in screen coordinates.
 
 To run the tests:
 
@@ -70,15 +75,19 @@ cargo test
 ## How it works
 
 ```
-spaceship.obj → vertices + indices → triangles → lines → pixels → window
+spaceship.obj → Obj → vertex array → model matrix (Uniforms) → triangles → fragments → framebuffer → window
 ```
 
 | File | Purpose |
 |---|---|
-| `src/obj.rs` | OBJ loader that builds an `Obj { vertices, indices }`. |
-| `src/render.rs` | Camera, framing and the vertex-to-screen transform; walks the index list three at a time and draws each triangle. |
-| `src/line.rs` | `line` (Bresenham) and `triangle` (three calls to `line`). |
-| `src/framebuffer.rs` | Color buffer and z-buffer; exports to a Raylib image or texture. |
+| `src/obj.rs` | OBJ loader that builds an `Obj { vertices, indices }`; `get_vertex_array()` returns the vertices ordered by face. |
+| `src/vertex.rs` | `Vertex` with its original `position`, `color` and screen-space `transformed_position`. |
+| `src/render.rs` | Model matrix (`create_model_matrix`), orbit camera, framing, and the vertex transform that fills `transformed_position`. |
+| `src/triangle.rs` | `triangle` returns the fragments of a triangle outline. |
+| `src/line.rs` | `line` (Bresenham) returns the fragments of a line. |
+| `src/fragment.rs` | `Fragment`: a pixel candidate with position, color and depth. |
+| `src/framebuffer.rs` | Color buffer and z-buffer; `init_texture` / `swap_buffers` show it in the window. |
 | `src/color.rs` | 8-bit RGB color. |
-| `src/main.rs` | Loads the model, saves the screenshot, runs the window and handles input. |
+| `src/main.rs` | `Uniforms`, the `render` function and the first-triangle test. |
+| `src/visor.rs` | Spaceship viewer: loads the model, handles the camera and input. |
 | `src/vertices.rs` | Warm-up exercise with `Vector2` and `Vector3`. |

@@ -1,8 +1,6 @@
-use raylib::prelude::{Matrix, Vector2, Vector3};
+use raylib::prelude::{Matrix, Vector3};
 
-use crate::framebuffer::Framebuffer;
-use crate::line::triangle;
-use crate::obj::Obj;
+use crate::vertex::Vertex;
 use crate::Uniforms;
 
 /// Fracción de la pantalla que ocupa el modelo; el resto queda como margen.
@@ -98,43 +96,35 @@ pub fn create_model_matrix(translation: Vector3, scale: f32, rotation: Vector3) 
     escala * rotacion * traslacion
 }
 
-/// Dibuja el contorno de todos los triángulos del modelo.
-pub fn draw_obj_wireframe(fb: &mut Framebuffer, uniforms: &Uniforms, obj: &Obj) {
-    let pantalla = vertices_a_pantalla(&obj.vertices, uniforms, fb.height as f32);
-
-    // Cada grupo de tres índices es un triángulo; los índices señalan
-    // posiciones dentro de la lista de vértices ya convertidos a pantalla.
-    for t in obj.indices.chunks_exact(3) {
-        let a = pantalla[t[0]];
-        let b = pantalla[t[1]];
-        let c = pantalla[t[2]];
-        triangle(fb, a, b, c);
-    }
-}
-
-/// Transforma cada vértice con la matriz de modelo y lo pasa a coordenadas de pantalla.
+/// Calcula `transformed_position` de cada vértice: aplica la matriz de modelo y
+/// después pasa el resultado a coordenadas de pantalla.
 ///
 /// Todos los vértices usan la misma `uniforms.model_matrix`; si cada uno usara una
 /// distinta, el modelo se deformaría en vez de moverse como una sola pieza.
-/// Se hace una vez por vértice y no una vez por triángulo, porque cada vértice
-/// suele compartirse entre varios triángulos.
-fn vertices_a_pantalla(vertices: &[Vector3], uniforms: &Uniforms, alto: f32) -> Vec<Vector2> {
-    vertices
-        .iter()
-        .map(|v| {
-            let p = v.transform(uniforms.model_matrix);
-            // En el modelo y crece hacia arriba; en pantalla crece hacia abajo.
-            Vector2::new(p.x, alto - p.y)
-        })
-        .collect()
+pub fn transformar_vertices(vertex_array: &mut [Vertex], uniforms: &Uniforms, alto: f32) {
+    for vertex in vertex_array {
+        let p = vertex.position.transform(uniforms.model_matrix);
+        // En el modelo y crece hacia arriba; en pantalla crece hacia abajo.
+        vertex.transformed_position = Vector3::new(p.x, alto - p.y, p.z);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn cerca(a: Vector2, b: Vector2) -> bool {
-        (a.x - b.x).abs() < 1e-3 && (a.y - b.y).abs() < 1e-3
+    fn cerca(a: (f32, f32), b: (f32, f32)) -> bool {
+        (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3
+    }
+
+    /// Posiciones en pantalla (x, y) de `posiciones` con los uniforms dados.
+    fn vertices_a_pantalla(posiciones: &[Vector3], u: &Uniforms, alto: f32) -> Vec<(f32, f32)> {
+        let mut vertex_array: Vec<Vertex> = posiciones.iter().map(|&p| Vertex::new(p)).collect();
+        transformar_vertices(&mut vertex_array, u, alto);
+        vertex_array
+            .iter()
+            .map(|v| (v.transformed_position.x, v.transformed_position.y))
+            .collect()
     }
 
     /// Uniforms con el modelo en el centro de una pantalla de `ancho` × `alto`.
@@ -172,8 +162,8 @@ mod tests {
         let p = vertices_a_pantalla(&vertices, &u, 600.0);
 
         // Ancho 8 y alto 4: limita el ancho -> escala = 800 * 0.9 / 8 = 90.
-        assert!(cerca(p[0], Vector2::new(40.0, 480.0)), "{:?}", p[0]);
-        assert!(cerca(p[1], Vector2::new(760.0, 120.0)), "{:?}", p[1]);
+        assert!(cerca(p[0], (40.0, 480.0)), "{:?}", p[0]);
+        assert!(cerca(p[1], (760.0, 120.0)), "{:?}", p[1]);
     }
 
     #[test]
@@ -181,7 +171,7 @@ mod tests {
         // Con 90° de yaw, un punto adelante del centro (z positivo) queda a la derecha.
         let u = uniforms(100.0, 100.0, 45.0, Vector3::new(0.0, std::f32::consts::FRAC_PI_2, 0.0));
         let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u, 100.0);
-        assert!(cerca(p[0], Vector2::new(95.0, 50.0)), "{:?}", p[0]);
+        assert!(cerca(p[0], (95.0, 50.0)), "{:?}", p[0]);
     }
 
     #[test]
@@ -189,7 +179,7 @@ mod tests {
         // Con 90° de pitch, un punto adelante del centro (z positivo) queda abajo.
         let u = uniforms(100.0, 100.0, 45.0, Vector3::new(std::f32::consts::FRAC_PI_2, 0.0, 0.0));
         let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u, 100.0);
-        assert!(cerca(p[0], Vector2::new(50.0, 95.0)), "{:?}", p[0]);
+        assert!(cerca(p[0], (50.0, 95.0)), "{:?}", p[0]);
     }
 
     #[test]
@@ -201,8 +191,8 @@ mod tests {
         for i in 0..16 {
             let angulo = i as f32 * std::f32::consts::TAU / 16.0;
             let u = uniforms(400.0, 400.0, escala, Vector3::new(angulo * 0.5, angulo, 0.0));
-            for p in vertices_a_pantalla(&vertices, &u, 400.0) {
-                assert!(p.x >= 0.0 && p.x <= 400.0 && p.y >= 0.0 && p.y <= 400.0, "{p:?}");
+            for (x, y) in vertices_a_pantalla(&vertices, &u, 400.0) {
+                assert!((0.0..=400.0).contains(&x) && (0.0..=400.0).contains(&y), "{x} {y}");
             }
         }
     }

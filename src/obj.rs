@@ -3,6 +3,8 @@ use std::io;
 
 use raylib::prelude::Vector3;
 
+use crate::vertex::Vertex;
+
 /// Modelo cargado de un archivo OBJ.
 ///
 /// `indices` se lee de tres en tres: cada grupo `[a, b, c]` es un triángulo y
@@ -16,6 +18,12 @@ impl Obj {
     /// Cantidad de triángulos del modelo.
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
+    }
+
+    /// Lista de vértices ordenada por caras: cada tres vértices consecutivos
+    /// forman un triángulo. Un vértice compartido por varias caras se repite.
+    pub fn get_vertex_array(&self) -> Vec<Vertex> {
+        self.indices.iter().map(|&i| Vertex::new(self.vertices[i])).collect()
     }
 
     /// Devuelve los tres vértices del triángulo número `i`.
@@ -118,6 +126,17 @@ mod tests {
         assert_eq!(a, Vector3::new(-0.516802, 1.627034, -0.292704));
         assert_eq!(b, Vector3::new(1.568286, 0.015753, 0.735004));
         assert_eq!(c, Vector3::new(1.125986, 0.781798, -1.058748));
+    }
+
+    #[test]
+    fn vertex_array_follows_the_faces() {
+        let obj = load_obj("assets/cube.obj").unwrap();
+        let vertex_array = obj.get_vertex_array();
+        assert_eq!(vertex_array.len(), 36);
+        let [a, b, c] = obj.triangle(0);
+        assert_eq!(vertex_array[0].position, a);
+        assert_eq!(vertex_array[1].position, b);
+        assert_eq!(vertex_array[2].position, c);
     }
 
     #[test]
