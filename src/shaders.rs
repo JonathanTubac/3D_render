@@ -1,5 +1,6 @@
 use raylib::prelude::*;
 
+use crate::fragment::Fragment;
 use crate::vertex::Vertex;
 use crate::Uniforms;
 
@@ -35,6 +36,14 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
     result
 }
 
+/// Decide el color de un fragmento. Se llama una vez por cada fragmento que
+/// genera la rasterización.
+///
+/// Por ahora es un passthrough: devuelve el color que el fragmento ya trae.
+pub fn fragment_shader(fragment: &Fragment) -> Vector3 {
+    fragment.color
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,6 +56,13 @@ mod tests {
 
     fn cerca(a: Vector3, b: Vector3) -> bool {
         (a - b).length() < 1e-4
+    }
+
+    #[test]
+    fn fragment_shader_is_a_passthrough() {
+        let color = Vector3::new(0.2, 0.4, 0.6);
+        let fragment = Fragment::new(10.0, 20.0, color, 0.5);
+        assert_eq!(fragment_shader(&fragment), color);
     }
 
     #[test]

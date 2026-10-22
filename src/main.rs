@@ -19,7 +19,7 @@ use raylib::prelude::*;
 use framebuffer::Framebuffer;
 use primitive::primitive_assembly;
 use rasterizer::rasterize;
-use shaders::vertex_shader;
+use shaders::{fragment_shader, vertex_shader};
 use vertex::Vertex;
 
 /// Parámetros que comparten todos los vértices y fragmentos de un mismo dibujo.
@@ -48,12 +48,15 @@ fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Ve
     let fragments = rasterize(&triangles);
 
     // 4. Procesamiento de fragmentos
-    //    Cada fragmento se escribe en su posición del framebuffer.
+    //    El fragment shader decide el color de cada fragmento y ese color se
+    //    escribe en su posición del framebuffer.
     for fragment in fragments {
+        let color = fragment_shader(&fragment);
+
         framebuffer.point(
             fragment.position.x as i32,
             fragment.position.y as i32,
-            fragment.color,
+            color,
         );
     }
 }
