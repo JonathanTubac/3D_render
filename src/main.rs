@@ -3,6 +3,7 @@ mod fragment;
 mod framebuffer;
 mod line;
 mod obj;
+mod primitive;
 mod render;
 mod shaders;
 mod triangle;
@@ -15,6 +16,7 @@ mod visor;
 use raylib::prelude::*;
 
 use framebuffer::Framebuffer;
+use primitive::primitive_assembly;
 use shaders::vertex_shader;
 use triangle::triangle_into;
 use vertex::Vertex;
@@ -38,12 +40,12 @@ fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Ve
 
     // 2. Ensamblaje de primitivas
     //    Cada grupo de tres vértices consecutivos forma un triángulo.
-    let triangles = transformed_vertices.chunks_exact(3);
+    let triangles = primitive_assembly(&transformed_vertices);
 
     // 3. Rasterización
     //    Cada triángulo genera los fragmentos que ocupa en la imagen.
     let mut fragments = Vec::new();
-    for tri in triangles {
+    for tri in &triangles {
         triangle_into(&tri[0], &tri[1], &tri[2], &mut fragments);
     }
 
