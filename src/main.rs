@@ -4,6 +4,7 @@ mod framebuffer;
 mod line;
 mod obj;
 mod primitive;
+mod rasterizer;
 mod render;
 mod shaders;
 mod triangle;
@@ -17,8 +18,8 @@ use raylib::prelude::*;
 
 use framebuffer::Framebuffer;
 use primitive::primitive_assembly;
+use rasterizer::rasterize;
 use shaders::vertex_shader;
-use triangle::triangle_into;
 use vertex::Vertex;
 
 /// Parámetros que comparten todos los vértices y fragmentos de un mismo dibujo.
@@ -44,10 +45,7 @@ fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Ve
 
     // 3. Rasterización
     //    Cada triángulo genera los fragmentos que ocupa en la imagen.
-    let mut fragments = Vec::new();
-    for tri in &triangles {
-        triangle_into(&tri[0], &tri[1], &tri[2], &mut fragments);
-    }
+    let fragments = rasterize(&triangles);
 
     // 4. Procesamiento de fragmentos
     //    Cada fragmento se escribe en su posición del framebuffer.
