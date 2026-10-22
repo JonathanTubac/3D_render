@@ -1,6 +1,7 @@
 mod color;
 mod fragment;
 mod framebuffer;
+mod laboratorio;
 mod line;
 mod obj;
 mod primitive;
@@ -18,7 +19,7 @@ use raylib::prelude::*;
 
 use framebuffer::Framebuffer;
 use primitive::primitive_assembly;
-use rasterizer::rasterize;
+use rasterizer::{rasterize, TriangleMode};
 use shaders::{fragment_shader, vertex_shader};
 use vertex::Vertex;
 
@@ -30,7 +31,10 @@ pub struct Uniforms {
 
 /// Convierte los vértices en una imagen siguiendo el pipeline:
 /// vértices → triángulos → fragmentos → framebuffer.
-fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Vertex]) {
+///
+/// `mode` indica si la rasterización genera solo el contorno de cada triángulo o
+/// también su interior, y con qué algoritmo.
+fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Vertex], mode: TriangleMode) {
     // 1. Procesamiento de vértices
     //    El vertex shader se ejecuta una vez por vértice, con los mismos uniforms
     //    para todos; deja el resultado en `transformed_position`.
@@ -45,7 +49,7 @@ fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Ve
 
     // 3. Rasterización
     //    Cada triángulo genera los fragmentos que ocupa en la imagen.
-    let fragments = rasterize(&triangles);
+    let fragments = rasterize(&triangles, mode);
 
     // 4. Procesamiento de fragmentos
     //    El fragment shader decide el color de cada fragmento y ese color se
@@ -61,55 +65,75 @@ fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Ve
     }
 }
 
+/// Tecla 1, 2 o 3: cambia el modo de rasterización.
+pub fn leer_modo(window: &RaylibHandle, mode: &mut TriangleMode) -> bool {
+    let anterior = *mode;
+    if window.is_key_pressed(KeyboardKey::KEY_ONE) {
+        *mode = TriangleMode::Wireframe;
+    }
+    if window.is_key_pressed(KeyboardKey::KEY_TWO) {
+        *mode = TriangleMode::FilledBarycentric;
+    }
+    if window.is_key_pressed(KeyboardKey::KEY_THREE) {
+        *mode = TriangleMode::FilledScanline;
+    }
+    *mode != anterior
+}
+
 fn main() {
-    // `--nave` abre el visor de la nave del Proyecto 1 (con `--captura`, solo guarda la imagen).
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--nave") {
-        if let Err(e) = visor::ejecutar(args.iter().any(|a| a == "--captura")) {
+    let flag = |nombre: &str| args.iter().any(|a| a == nombre);
+
+    // `--nave` abre el visor de la nave del Proyecto 1 (con `--captura`, solo guarda la imagen).
+    if flag("--nave") {
+        if let Err(e) = visor::ejecutar(flag("--captura")) {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
         return;
     }
+    // Mide la rasterización de cada modo, sin abrir la ventana.
+    if flag("--benchmark-triangles") {
+        if let Err(e) = laboratorio::benchmark() {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    // Guarda una imagen de la escena de prueba en cada modo.
+    if flag("--capturas-relleno") {
+        laboratorio::capturas();
+        return;
+    }
 
     let (mut window, thread) = raylib::init()
-        .size(800, 600)
-        .title("Primer triangulo")
+        .size(laboratorio::ANCHO as i32, laboratorio::ALTO as i32)
+        .title("Relleno de triangulos")
         .build();
 
     window.set_target_fps(60);
 
-    let mut framebuffer = Framebuffer::new(800, 600);
+    let mut framebuffer = Framebuffer::new(laboratorio::ANCHO, laboratorio::ALTO);
     framebuffer.set_background_color(Vector3::new(0.0, 0.0, 0.0));
     framebuffer.init_texture(&mut window, &thread);
 
-    let positions = [
-        // Primer triángulo.
-        Vector3::new(300.0, 200.0, 0.0),
-        Vector3::new(400.0, 400.0, 0.0),
-        Vector3::new(500.0, 200.0, 0.0),
-        // Segundo triángulo, en la misma llamada a render.
-        Vector3::new(550.0, 450.0, 0.0),
-        Vector3::new(700.0, 300.0, 0.0),
-        Vector3::new(750.0, 550.0, 0.0),
-    ];
-
-    let vertex_array: Vec<Vertex> = positions
-        .into_iter()
-        .map(|position| {
-            // Las posiciones ya están en coordenadas de pantalla; con la matriz
-            // identidad, el procesamiento de vértices las deja iguales.
-            Vertex::new_with_color(position, Vector3::new(1.0, 1.0, 1.0))
-        })
-        .collect();
+    // Las posiciones ya están en coordenadas de pantalla; con la matriz
+    // identidad, el procesamiento de vértices las deja iguales.
+    let vertex_array = laboratorio::escena_de_prueba();
 
     let uniforms = Uniforms {
         model_matrix: Matrix::identity(),
     };
+    let mut mode = TriangleMode::FilledScanline;
 
     while !window.window_should_close() {
+        leer_modo(&window, &mut mode);
+
         framebuffer.clear();
-        render(&mut framebuffer, &uniforms, &vertex_array);
-        framebuffer.swap_buffers(&mut window, &thread);
+        render(&mut framebuffer, &uniforms, &vertex_array, mode);
+        let texto = format!("1: Wireframe  2: FilledBarycentric  3: FilledScanline   Modo: {}", mode.nombre());
+        framebuffer.swap_buffers_with(&mut window, &thread, |d| {
+            d.draw_text(&texto, 10, 10, 20, Color::LIGHTGRAY);
+        });
     }
 }

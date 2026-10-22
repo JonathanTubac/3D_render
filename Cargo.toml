@@ -11,3 +11,6 @@ raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION"] }
 # la nave tardaba ~280 ms en vez de ~180 ms.
 [profile.release]
 codegen-units = 1
+# Nombres de funciones en el ejecutable para que el perfilador (cargo flamegraph)
+# pueda mostrar dónde se emplea el tiempo. No cambia la optimización.
+debug = true

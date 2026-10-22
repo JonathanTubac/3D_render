@@ -10,7 +10,8 @@ use crate::framebuffer::Framebuffer;
 use crate::obj::load_obj;
 use crate::render::{centrar, uniforms_camara, Camara, Encuadre};
 use crate::vertex::Vertex;
-use crate::render;
+use crate::rasterizer::TriangleMode;
+use crate::{leer_modo, render};
 
 const ANCHO: usize = 1024;
 const ALTO: usize = 768;
@@ -30,7 +31,7 @@ const PASO_ZOOM: f32 = 1.1;
 const ZOOM_MIN: f32 = 0.2;
 const ZOOM_MAX: f32 = 8.0;
 
-const AYUDA: &str = "Arrastrar / flechas: rotar   Rueda: zoom   R: reiniciar";
+const AYUDA: &str = "Arrastrar / flechas: rotar   Rueda: zoom   R: reiniciar   1/2/3: modo";
 
 /// Abre la ventana del visor. Con `solo_captura`, guarda la vista de frente en
 /// `captura.png` y termina sin abrir la ventana.
@@ -57,7 +58,7 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
         let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
         framebuffer.set_background_color(COLOR_FONDO);
         let inicio = Instant::now();
-        dibujar(&mut framebuffer, &vertex_array, &Camara::default(), &encuadre);
+        dibujar(&mut framebuffer, &vertex_array, &Camara::default(), &encuadre, TriangleMode::Wireframe);
         println!("Dibujado en {:.2?}", inicio.elapsed());
         framebuffer.to_image().export_image(CAPTURA);
         println!("Captura guardada en {CAPTURA}");
@@ -81,19 +82,22 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
         ..Camara::default()
     };
     let mut camara = inicial;
+    let mut mode = TriangleMode::Wireframe;
     let mut redibujar = true;
 
     while !window.window_should_close() {
         redibujar |= actualizar_camara(&window, &mut camara, &inicial);
+        redibujar |= leer_modo(&window, &mut mode);
 
         // Solo se vuelve a dibujar el modelo cuando la cámara se mueve.
         if redibujar {
             redibujar = false;
-            dibujar(&mut framebuffer, &vertex_array, &camara, &encuadre);
+            dibujar(&mut framebuffer, &vertex_array, &camara, &encuadre, mode);
         }
 
         framebuffer.swap_buffers_with(&mut window, &thread, |d| {
             d.draw_text(AYUDA, 10, 10, 20, Color::LIGHTGRAY);
+            d.draw_text(mode.nombre(), 10, 34, 20, Color::LIGHTGRAY);
             d.draw_fps(10, ALTO as i32 - 30);
         });
     }
@@ -101,10 +105,16 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
 }
 
 /// Prepara los uniforms de la cámara y dibuja el modelo con una sola llamada a `render`.
-fn dibujar(framebuffer: &mut Framebuffer, vertex_array: &[Vertex], camara: &Camara, encuadre: &Encuadre) {
+fn dibujar(
+    framebuffer: &mut Framebuffer,
+    vertex_array: &[Vertex],
+    camara: &Camara,
+    encuadre: &Encuadre,
+    mode: TriangleMode,
+) {
     let uniforms = uniforms_camara(camara, encuadre, ANCHO as f32, ALTO as f32);
     framebuffer.clear();
-    render(framebuffer, &uniforms, vertex_array);
+    render(framebuffer, &uniforms, vertex_array, mode);
 }
 
 /// Ajusta la cámara según el teclado y el mouse; `R` la regresa a `inicial`.
