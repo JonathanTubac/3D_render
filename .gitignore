@@ -1,3 +1,4 @@
 /target
 *.bmp
 captura.png
+/flamegraph.svg

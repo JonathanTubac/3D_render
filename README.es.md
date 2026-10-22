@@ -200,3 +200,30 @@ cargo flamegraph -- --benchmark-triangles   # en una terminal de administrador
 En Windows, `cargo flamegraph` necesita permisos de administrador para leer los eventos
 de rendimiento del sistema. `Cargo.toml` activa `debug = true` en el perfil release para
 que el perfil muestre los nombres de las funciones; no cambia la optimización.
+
+[![Flamegraph de --benchmark-triangles](docs/flamegraph.svg)](docs/flamegraph.svg)
+
+Abre [`docs/flamegraph.svg`](docs/flamegraph.svg) en el navegador para hacer zoom y
+buscar funciones. El ancho de cada bloque es la proporción de muestras en las que apareció
+esa función, no el orden en que se ejecutó.
+
+`rasterize` aparece en el 93 % de las muestras; el resto es preparar los triángulos de la
+nave y comparar las posiciones. Dentro de cada relleno, el tiempo se reparte así:
+
+| Dentro de… | Prueba "¿está adentro?" (`dentro`, `edge`, `pasa`) | Escribir el fragmento (`Vec::push`) | Hacer crecer el `Vec` (`reserve` → `grow_amortized` → sistema) | Cruces de aristas (`tramo`) |
+|---|---:|---:|---:|---:|
+| `triangle_filled_barycentric_into` (52 % del total) | 38 % | 29 % | 23 % | — |
+| `triangle_filled_scanline_into` (37 % del total) | 2 % | 49 % | 33 % | 8 % |
+
+- **Baricéntrico:** el cálculo geométrico es su parte más grande (38 %): las tres *edge
+  functions* que evalúa en cada píxel del rectángulo, incluidos los que quedan fuera.
+- **Scanline:** casi no hace cálculos geométricos (10 % entre `tramo` y `dentro`); el
+  **82 % de su tiempo es memoria**: escribir los fragmentos y hacer crecer el `Vec`.
+- Los bloques sin nombre (`0x7FF9…`) son funciones de Windows (`ntdll`) que aparecen al
+  copiar el `Vec` a un bloque más grande y al liberarlo.
+
+Esto confirma el experimento de la sección anterior: en este renderer, crear y guardar
+fragmentos cuesta más que decidir qué píxeles cubre el triángulo. La mejora más grande ya
+no estaría en el algoritmo de relleno, sino en no guardar todos los fragmentos en un `Vec`
+(por ejemplo, reutilizar el mismo `Vec` entre cuadros o escribir cada fragmento en cuanto se
+genera).

@@ -205,3 +205,30 @@ cargo flamegraph -- --benchmark-triangles   # from an administrator terminal
 On Windows, `cargo flamegraph` needs administrator rights to read the system's performance
 events. `Cargo.toml` sets `debug = true` in the release profile so the profile shows function
 names; it does not change optimization.
+
+[![Flamegraph of --benchmark-triangles](docs/flamegraph.svg)](docs/flamegraph.svg)
+
+Open [`docs/flamegraph.svg`](docs/flamegraph.svg) in a browser to zoom in and search for
+functions. A block's width is the share of samples in which that function appeared, not the
+order in which it ran.
+
+`rasterize` appears in 93 % of the samples; the rest is preparing the spaceship's triangles
+and comparing positions. Inside each fill, the time splits like this:
+
+| Inside… | Inside test (`dentro`, `edge`, `pasa`) | Writing the fragment (`Vec::push`) | Growing the `Vec` (`reserve` → `grow_amortized` → OS) | Edge crossings (`tramo`) |
+|---|---:|---:|---:|---:|
+| `triangle_filled_barycentric_into` (52 % of total) | 38 % | 29 % | 23 % | — |
+| `triangle_filled_scanline_into` (37 % of total) | 2 % | 49 % | 33 % | 8 % |
+
+- **Barycentric:** the geometry is its largest part (38 %): the three edge functions it
+  evaluates for every pixel in the bounding box, including those outside the triangle.
+- **Scanline:** it barely does any geometry (10 % between `tramo` and `dentro`); **82 % of its
+  time is memory**: writing fragments and growing the `Vec`.
+- The unnamed blocks (`0x7FF9…`) are Windows functions (`ntdll`) that show up when the `Vec`
+  is copied into a larger block and when it is freed.
+
+This confirms the experiment in the previous section: in this renderer, creating and storing
+fragments costs more than deciding which pixels a triangle covers. The biggest improvement
+would no longer come from the fill algorithm, but from not storing every fragment in a `Vec`
+(for example, reusing the same `Vec` across frames, or writing each fragment as soon as it is
+generated).
