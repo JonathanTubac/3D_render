@@ -1,70 +1,30 @@
-# Spaceship Render
+# Laboratorio 5: rellenar triángulos
 
 Renderer por software escrito en Rust para el curso de Gráficas por Computadora (UVG).
-Carga un modelo `.obj` hecho en Blender y dibuja sus triángulos, en contorno o
-rellenos, con algoritmos propios. Raylib solo se usa para abrir la ventana, mostrar el
-framebuffer como textura y guardar la captura en PNG; **no** se usan sus funciones
-para cargar ni dibujar modelos.
-
-## Proyecto 1 — Parte 1: dibujando un modelo OBJ
-
-![Nave renderizada en wireframe](screenshot.png)
-
-| | |
-|---|---|
-| ![Vista de cerca](screenshot1.png) | ![Vista de frente](screenshot2.png) |
-
-Modelo: `spaceship.obj`, 286,689 vértices y 573,439 triángulos.
-
-Como todavía no hay proyección, se dibujan directamente las componentes `x` y `y`
-de cada vértice (vista de frente). Los vértices se escalan con la misma escala en
-ambos ejes y se trasladan para que el modelo quede centrado y ocupe el 90 % de la
-ventana sin salirse.
+En este laboratorio la rasterización puede generar el contorno de cada triángulo o
+rellenarlo con dos algoritmos: coordenadas baricéntricas y líneas horizontales
+(scanline). Raylib solo se usa para abrir la ventana y mostrar el framebuffer como
+textura; todos los fragmentos los genera el código del proyecto.
 
 ## Cómo ejecutarlo
 
-Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa para compilar Raylib.
-
-Para abrir el visor de la nave:
-
-```sh
-cargo run --release -- --nave
-```
-
-Abre una ventana de 1024×768 con el modelo. Usa `--release`: en modo debug dibujar
-573k triángulos es mucho más lento.
-
-### Controles
-
-| Entrada | Acción |
-|---|---|
-| Arrastrar con clic izquierdo / flechas | Rotar el modelo |
-| Rueda del mouse | Zoom |
-| `R` | Regresar a la vista inicial |
-| `1` / `2` / `3` | Modo: wireframe / relleno baricéntrico / relleno scanline |
-
-La ventana arranca con el zoom necesario para que el modelo quepa completo desde
-cualquier ángulo. Solo se vuelve a dibujar cuando la cámara se mueve.
-
-Para guardar la vista de frente en `captura.png` sin abrir la ventana:
+Requisitos: Rust (toolchain MSVC en Windows) y CMake, que el crate `raylib` usa para
+compilar Raylib. Usa `--release`: en modo debug la rasterización es mucho más lenta.
 
 ```sh
-cargo run --release -- --nave --captura
-```
-
-Sin `--nave` (`cargo run --release`) se abre la escena de prueba del laboratorio de
-relleno; las teclas `1`, `2` y `3` cambian el modo. Otros modos del programa:
-
-```sh
+cargo run --release                          # escena de prueba en una ventana
 cargo run --release -- --capturas-relleno    # guarda docs/relleno_*.png
 cargo run --release -- --benchmark-triangles # mide la rasterización de cada modo
+cargo test                                   # tests
 ```
 
-Para correr los tests:
+En la ventana, las teclas cambian el modo de rasterización:
 
-```sh
-cargo test
-```
+| Tecla | Modo |
+|---|---|
+| `1` | `Wireframe` |
+| `2` | `FilledBarycentric` |
+| `3` | `FilledScanline` |
 
 > **Windows:** `.cargo/config.toml` le indica a `bindgen` dónde están los headers de
 > MSVC porque en la máquina de desarrollo no los encontraba solo. Si tu instalación de
@@ -72,29 +32,26 @@ cargo test
 
 ## Cómo funciona
 
+`render` sigue el pipeline de cuatro etapas; el modo solo cambia la rasterización:
+
 ```
-spaceship.obj → Obj → arreglo de vértices → matriz de modelo (Uniforms) → triángulos → fragmentos → framebuffer → ventana
+vértices → vertex shader → ensamblaje de primitivas → rasterización (TriangleMode) → fragment shader → framebuffer
 ```
 
 | Archivo | Qué hace |
 |---|---|
-| `src/obj.rs` | Cargador de OBJ: lee las líneas `v` (posiciones) y `f` (caras), convierte los índices de base 1 a base 0 y acepta grupos como `5/7/2`. `get_vertex_array()` devuelve los vértices ordenados por caras. |
-| `src/vertex.rs` | `Vertex` con su `position` original, `color` y `transformed_position` en coordenadas de pantalla. |
-| `src/render.rs` | Matriz de modelo (`create_model_matrix`), cámara orbital, encuadre y la transformación que llena `transformed_position`. |
 | `src/triangle.rs` | `triangle` (contorno), `triangle_filled_barycentric` y `triangle_filled_scanline` devuelven los fragmentos de un triángulo. |
 | `src/rasterizer.rs` | `TriangleMode` y `rasterize`, que genera los fragmentos de todos los triángulos en el modo elegido. |
+| `src/laboratorio.rs` | Escena de prueba, capturas y mediciones del laboratorio. |
+| `src/main.rs` | `Uniforms`, la función `render` y la ventana con la escena de prueba. |
 | `src/primitive.rs` | Ensamblaje de primitivas: agrupa los vértices de tres en tres. |
 | `src/shaders.rs` | `vertex_shader` (aplica la matriz de modelo) y `fragment_shader` (passthrough). |
-| `src/laboratorio.rs` | Escena de prueba, capturas y mediciones del laboratorio de relleno. |
 | `src/line.rs` | `line` (algoritmo de Bresenham) devuelve los fragmentos de una línea. |
 | `src/fragment.rs` | `Fragment`: candidato a píxel con posición, color y profundidad. |
-| `src/framebuffer.rs` | Buffer de color y z-buffer propios; `init_texture` / `swap_buffers` lo muestran en la ventana. |
-| `src/color.rs` | Color RGB de 8 bits por canal. |
-| `src/main.rs` | `Uniforms`, la función `render` (pipeline de 4 etapas) y la escena de prueba. |
-| `src/visor.rs` | Visor de la nave: carga el modelo y maneja la cámara y la entrada. |
-| `src/vertices.rs` | Ejercicio de la fase de vértices (`Vector2` y `Vector3`). |
+| `src/framebuffer.rs` | Buffer de color y z-buffer; `init_texture` / `swap_buffers` lo muestran en la ventana. |
+| `src/obj.rs` | Cargador de OBJ; se usa para medir la rasterización con los triángulos de `spaceship.obj`. |
 
-## Laboratorio: rellenar triángulos
+## Modos de dibujo
 
 `rasterize` recibe un `TriangleMode`:
 
@@ -105,7 +62,7 @@ pub enum TriangleMode { Wireframe, FilledBarycentric, FilledScanline }
 El ensamblaje de primitivas y el procesamiento de fragmentos no cambian; solo cambia
 cómo cada triángulo se convierte en fragmentos.
 
-### Imágenes de cada modo
+## Imágenes de cada modo
 
 Escena de prueba: triángulo pequeño (amarillo), grande (azul), con borde horizontal
 (verde), con borde vertical (rosa), el mismo con sus vértices en orden inverso (morado,
@@ -120,7 +77,7 @@ El triángulo rojo (vértices colineales) solo aparece en wireframe: su área es
 que los rellenos lo tratan como degenerado, no generan fragmentos y no dividen entre
 cero. El morado tiene exactamente las mismas posiciones que el rosa.
 
-### Los dos algoritmos
+## Los dos algoritmos
 
 - **Baricéntrico:** recorre el rectángulo que envuelve al triángulo y, para el centro de
   cada píxel `(x + 0.5, y + 0.5)`, calcula sus tres coordenadas baricéntricas (con
@@ -144,7 +101,7 @@ píxel.
 Si los vértices vienen en el orden contrario, se intercambian dos para que el área sea
 positiva; el triángulo no desaparece.
 
-### Mediciones
+## Mediciones
 
 `cargo run --release -- --benchmark-triangles`. Solo se mide `rasterize` (generar y
 guardar los fragmentos): los triángulos se preparan antes y no se dibuja ninguna ventana.
@@ -166,7 +123,7 @@ mediciones. La salida completa está en [`docs/benchmark.txt`](docs/benchmark.tx
 Los dos rellenos generan la misma cantidad de fragmentos en cada caso, así que la
 comparación es justa: ninguno es más rápido por omitir parte del triángulo.
 
-### Diferencias que encontramos
+## Diferencias que encontramos
 
 1. **Con triángulos grandes gana el scanline (~1.5× más rápido).** El baricéntrico evalúa
    tres *edge functions* en cada píxel del rectángulo que envuelve al triángulo, y cerca
@@ -188,7 +145,7 @@ comparación es justa: ninguno es más rápido por omitir parte del triángulo.
    memoria nueva al sistema y llenarla (un `Vec` de ~32 MB por ejecución), no en el
    algoritmo. Sin ese costo, el scanline es ~3× más rápido que el baricéntrico.
 
-### Perfil
+## Perfil
 
 ```sh
 cargo install flamegraph
@@ -226,7 +183,7 @@ no estaría en el algoritmo de relleno, sino en no guardar todos los fragmentos 
 (por ejemplo, reutilizar el mismo `Vec` entre cuadros o escribir cada fragmento en cuanto se
 genera).
 
-### Preguntas del laboratorio
+## Preguntas del laboratorio
 
 **¿Cómo determinan qué posiciones de la imagen están dentro de un triángulo?**
 Se evalúa el centro de cada píxel, `(x + 0.5, y + 0.5)`. Con las tres *edge functions* se
