@@ -4,6 +4,7 @@ mod framebuffer;
 mod line;
 mod obj;
 mod render;
+mod shaders;
 mod triangle;
 mod vertex;
 // Ejercicio de la fase de vértices; el renderer no lo utiliza.
@@ -14,6 +15,7 @@ mod visor;
 use raylib::prelude::*;
 
 use framebuffer::Framebuffer;
+use shaders::vertex_shader;
 use triangle::triangle_into;
 use vertex::Vertex;
 
@@ -27,14 +29,11 @@ pub struct Uniforms {
 /// vértices → triángulos → fragmentos → framebuffer.
 fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Vertex]) {
     // 1. Procesamiento de vértices
-    //    Cada vértice se transforma con la misma matriz de modelo; el resultado
-    //    queda en `transformed_position`, en coordenadas de pantalla.
+    //    El vertex shader se ejecuta una vez por vértice, con los mismos uniforms
+    //    para todos; deja el resultado en `transformed_position`.
     let transformed_vertices: Vec<Vertex> = vertex_array
         .iter()
-        .map(|vertex| Vertex {
-            transformed_position: vertex.position.transform(uniforms.model_matrix),
-            ..*vertex
-        })
+        .map(|vertex| vertex_shader(vertex, uniforms))
         .collect();
 
     // 2. Ensamblaje de primitivas
