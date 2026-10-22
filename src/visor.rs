@@ -8,9 +8,9 @@ use raylib::prelude::*;
 
 use crate::framebuffer::Framebuffer;
 use crate::obj::load_obj;
-use crate::render::{centrar, create_model_matrix, transformar_vertices, Camara, Encuadre};
+use crate::render::{centrar, uniforms_camara, Camara, Encuadre};
 use crate::vertex::Vertex;
-use crate::{render, Uniforms};
+use crate::render;
 
 const ANCHO: usize = 1024;
 const ALTO: usize = 768;
@@ -47,6 +47,7 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
     let encuadre = Encuadre::new(&modelo.vertices, ANCHO as f32, ALTO as f32);
 
     let mut vertex_array: Vec<Vertex> = modelo.get_vertex_array();
+    // El color es un atributo por vértice; aquí todos usan el mismo.
     for vertex in &mut vertex_array {
         vertex.color = COLOR_MODELO;
     }
@@ -56,7 +57,7 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
         let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
         framebuffer.set_background_color(COLOR_FONDO);
         let inicio = Instant::now();
-        dibujar(&mut framebuffer, &mut vertex_array, &Camara::default(), &encuadre);
+        dibujar(&mut framebuffer, &vertex_array, &Camara::default(), &encuadre);
         println!("Dibujado en {:.2?}", inicio.elapsed());
         framebuffer.to_image().export_image(CAPTURA);
         println!("Captura guardada en {CAPTURA}");
@@ -88,7 +89,7 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
         // Solo se vuelve a dibujar el modelo cuando la cámara se mueve.
         if redibujar {
             redibujar = false;
-            dibujar(&mut framebuffer, &mut vertex_array, &camara, &encuadre);
+            dibujar(&mut framebuffer, &vertex_array, &camara, &encuadre);
         }
 
         framebuffer.swap_buffers_with(&mut window, &thread, |d| {
@@ -99,22 +100,11 @@ pub fn ejecutar(solo_captura: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// Prepara los uniforms de la cámara, transforma los vértices y dibuja el modelo.
-fn dibujar(framebuffer: &mut Framebuffer, vertex_array: &mut [Vertex], camara: &Camara, encuadre: &Encuadre) {
-    let uniforms = preparar_uniforms(camara, encuadre);
-    transformar_vertices(vertex_array, &uniforms, ALTO as f32);
+/// Prepara los uniforms de la cámara y dibuja el modelo con una sola llamada a `render`.
+fn dibujar(framebuffer: &mut Framebuffer, vertex_array: &[Vertex], camara: &Camara, encuadre: &Encuadre) {
+    let uniforms = uniforms_camara(camara, encuadre, ANCHO as f32, ALTO as f32);
     framebuffer.clear();
     render(framebuffer, &uniforms, vertex_array);
-}
-
-/// Prepara los uniforms de un dibujo a partir del estado de la cámara.
-fn preparar_uniforms(camara: &Camara, encuadre: &Encuadre) -> Uniforms {
-    let translation = Vector3::new(ANCHO as f32 / 2.0, ALTO as f32 / 2.0, 0.0);
-    let scale = encuadre.escala * camara.zoom;
-    let rotation = Vector3::new(camara.pitch, camara.yaw, 0.0);
-
-    let model_matrix = create_model_matrix(translation, scale, rotation);
-    Uniforms { model_matrix }
 }
 
 /// Ajusta la cámara según el teclado y el mouse; `R` la regresa a `inicial`.

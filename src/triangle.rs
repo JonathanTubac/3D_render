@@ -5,14 +5,21 @@ use crate::vertex::Vertex;
 /// Genera los fragmentos del contorno de un triángulo: las tres líneas que
 /// conectan sus vértices. Todavía no rellena el interior.
 pub fn triangle(v1: &Vertex, v2: &Vertex, v3: &Vertex) -> Vec<Fragment> {
+    let mut fragments = Vec::new();
+    triangle_into(v1, v2, v3, &mut fragments);
+    fragments
+}
+
+/// Igual que `triangle`, pero agrega los fragmentos a `fragments`. Así la
+/// rasterización de un modelo completo junta todos sus fragmentos en un solo
+/// `Vec`, sin crear y copiar uno por cada triángulo.
+pub fn triangle_into(v1: &Vertex, v2: &Vertex, v3: &Vertex, fragments: &mut Vec<Fragment>) {
     // Se reserva de una vez el espacio de los tres lados para no volver a pedir
     // memoria mientras se agregan los fragmentos.
-    let total = fragment_count(v1, v2) + fragment_count(v2, v3) + fragment_count(v3, v1);
-    let mut fragments = Vec::with_capacity(total);
-    line_into(v1, v2, &mut fragments);
-    line_into(v2, v3, &mut fragments);
-    line_into(v3, v1, &mut fragments);
-    fragments
+    fragments.reserve(fragment_count(v1, v2) + fragment_count(v2, v3) + fragment_count(v3, v1));
+    line_into(v1, v2, fragments);
+    line_into(v2, v3, fragments);
+    line_into(v3, v1, fragments);
 }
 
 #[cfg(test)]

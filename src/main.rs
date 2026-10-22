@@ -14,7 +14,7 @@ mod visor;
 use raylib::prelude::*;
 
 use framebuffer::Framebuffer;
-use triangle::triangle;
+use triangle::triangle_into;
 use vertex::Vertex;
 
 /// Parámetros que comparten todos los vértices y fragmentos de un mismo dibujo.
@@ -23,19 +23,39 @@ pub struct Uniforms {
     pub model_matrix: Matrix,
 }
 
-/// Dibuja los triángulos de `vertex_array`: cada grupo de tres vértices
-/// consecutivos es un triángulo. Usa `transformed_position` de cada vértice.
-fn render(framebuffer: &mut Framebuffer, _uniforms: &Uniforms, vertex_array: &[Vertex]) {
-    for vertices in vertex_array.chunks_exact(3) {
-        let fragments = triangle(&vertices[0], &vertices[1], &vertices[2]);
+/// Convierte los vértices en una imagen siguiendo el pipeline:
+/// vértices → triángulos → fragmentos → framebuffer.
+fn render(framebuffer: &mut Framebuffer, uniforms: &Uniforms, vertex_array: &[Vertex]) {
+    // 1. Procesamiento de vértices
+    //    Cada vértice se transforma con la misma matriz de modelo; el resultado
+    //    queda en `transformed_position`, en coordenadas de pantalla.
+    let transformed_vertices: Vec<Vertex> = vertex_array
+        .iter()
+        .map(|vertex| Vertex {
+            transformed_position: vertex.position.transform(uniforms.model_matrix),
+            ..*vertex
+        })
+        .collect();
 
-        for fragment in fragments {
-            framebuffer.point(
-                fragment.position.x as i32,
-                fragment.position.y as i32,
-                fragment.color,
-            );
-        }
+    // 2. Ensamblaje de primitivas
+    //    Cada grupo de tres vértices consecutivos forma un triángulo.
+    let triangles = transformed_vertices.chunks_exact(3);
+
+    // 3. Rasterización
+    //    Cada triángulo genera los fragmentos que ocupa en la imagen.
+    let mut fragments = Vec::new();
+    for tri in triangles {
+        triangle_into(&tri[0], &tri[1], &tri[2], &mut fragments);
+    }
+
+    // 4. Procesamiento de fragmentos
+    //    Cada fragmento se escribe en su posición del framebuffer.
+    for fragment in fragments {
+        framebuffer.point(
+            fragment.position.x as i32,
+            fragment.position.y as i32,
+            fragment.color,
+        );
     }
 }
 
@@ -75,11 +95,9 @@ fn main() {
     let vertex_array: Vec<Vertex> = positions
         .into_iter()
         .map(|position| {
-            let mut vertex = Vertex::new_with_color(position, Vector3::new(1.0, 1.0, 1.0));
-
-            // Las posiciones ya están en coordenadas de pantalla.
-            vertex.transformed_position = position;
-            vertex
+            // Las posiciones ya están en coordenadas de pantalla; con la matriz
+            // identidad, el procesamiento de vértices las deja iguales.
+            Vertex::new_with_color(position, Vector3::new(1.0, 1.0, 1.0))
         })
         .collect();
 

@@ -1,6 +1,5 @@
 use raylib::prelude::{Matrix, Vector3};
 
-use crate::vertex::Vertex;
 use crate::Uniforms;
 
 /// Fracción de la pantalla que ocupa el modelo; el resto queda como margen.
@@ -96,17 +95,19 @@ pub fn create_model_matrix(translation: Vector3, scale: f32, rotation: Vector3) 
     escala * rotacion * traslacion
 }
 
-/// Calcula `transformed_position` de cada vértice: aplica la matriz de modelo y
-/// después pasa el resultado a coordenadas de pantalla.
+/// Prepara los uniforms para ver el modelo desde `camara` en una pantalla de
+/// `ancho` × `alto`.
 ///
-/// Todos los vértices usan la misma `uniforms.model_matrix`; si cada uno usara una
-/// distinta, el modelo se deformaría en vez de moverse como una sola pieza.
-pub fn transformar_vertices(vertex_array: &mut [Vertex], uniforms: &Uniforms, alto: f32) {
-    for vertex in vertex_array {
-        let p = vertex.position.transform(uniforms.model_matrix);
-        // En el modelo y crece hacia arriba; en pantalla crece hacia abajo.
-        vertex.transformed_position = Vector3::new(p.x, alto - p.y, p.z);
-    }
+/// La matriz resultante lleva el modelo directo a coordenadas de pantalla: después
+/// de escalarlo y rotarlo se invierte y (en el modelo crece hacia arriba y en
+/// pantalla hacia abajo) y se mueve al centro de la pantalla.
+pub fn uniforms_camara(camara: &Camara, encuadre: &Encuadre, ancho: f32, alto: f32) -> Uniforms {
+    let scale = encuadre.escala * camara.zoom;
+    let rotation = Vector3::new(camara.pitch, camara.yaw, 0.0);
+    let modelo = create_model_matrix(Vector3::new(0.0, 0.0, 0.0), scale, rotation);
+
+    let a_pantalla = Matrix::scale(1.0, -1.0, 1.0) * Matrix::translate(ancho / 2.0, alto / 2.0, 0.0);
+    Uniforms { model_matrix: modelo * a_pantalla }
 }
 
 #[cfg(test)]
@@ -118,19 +119,19 @@ mod tests {
     }
 
     /// Posiciones en pantalla (x, y) de `posiciones` con los uniforms dados.
-    fn vertices_a_pantalla(posiciones: &[Vector3], u: &Uniforms, alto: f32) -> Vec<(f32, f32)> {
-        let mut vertex_array: Vec<Vertex> = posiciones.iter().map(|&p| Vertex::new(p)).collect();
-        transformar_vertices(&mut vertex_array, u, alto);
-        vertex_array
+    fn vertices_a_pantalla(posiciones: &[Vector3], u: &Uniforms) -> Vec<(f32, f32)> {
+        posiciones
             .iter()
-            .map(|v| (v.transformed_position.x, v.transformed_position.y))
+            .map(|p| p.transform(u.model_matrix))
+            .map(|p| (p.x, p.y))
             .collect()
     }
 
     /// Uniforms con el modelo en el centro de una pantalla de `ancho` × `alto`.
     fn uniforms(ancho: f32, alto: f32, escala: f32, rotation: Vector3) -> Uniforms {
-        let centro = Vector3::new(ancho / 2.0, alto / 2.0, 0.0);
-        Uniforms { model_matrix: create_model_matrix(centro, escala, rotation) }
+        let camara = Camara { yaw: rotation.y, pitch: rotation.x, zoom: 1.0 };
+        let encuadre = Encuadre { escala, radio: 0.0 };
+        uniforms_camara(&camara, &encuadre, ancho, alto)
     }
 
     #[test]
@@ -159,7 +160,7 @@ mod tests {
         centrar(&mut vertices);
         let encuadre = Encuadre::new(&vertices, 800.0, 600.0);
         let u = uniforms(800.0, 600.0, encuadre.escala, Vector3::new(0.0, 0.0, 0.0));
-        let p = vertices_a_pantalla(&vertices, &u, 600.0);
+        let p = vertices_a_pantalla(&vertices, &u);
 
         // Ancho 8 y alto 4: limita el ancho -> escala = 800 * 0.9 / 8 = 90.
         assert!(cerca(p[0], (40.0, 480.0)), "{:?}", p[0]);
@@ -170,7 +171,7 @@ mod tests {
     fn yaw_of_90_degrees_shows_the_side() {
         // Con 90° de yaw, un punto adelante del centro (z positivo) queda a la derecha.
         let u = uniforms(100.0, 100.0, 45.0, Vector3::new(0.0, std::f32::consts::FRAC_PI_2, 0.0));
-        let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u, 100.0);
+        let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u);
         assert!(cerca(p[0], (95.0, 50.0)), "{:?}", p[0]);
     }
 
@@ -178,7 +179,7 @@ mod tests {
     fn pitch_of_90_degrees_shows_the_top() {
         // Con 90° de pitch, un punto adelante del centro (z positivo) queda abajo.
         let u = uniforms(100.0, 100.0, 45.0, Vector3::new(std::f32::consts::FRAC_PI_2, 0.0, 0.0));
-        let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u, 100.0);
+        let p = vertices_a_pantalla(&[Vector3::new(0.0, 0.0, 1.0)], &u);
         assert!(cerca(p[0], (50.0, 95.0)), "{:?}", p[0]);
     }
 
@@ -191,7 +192,7 @@ mod tests {
         for i in 0..16 {
             let angulo = i as f32 * std::f32::consts::TAU / 16.0;
             let u = uniforms(400.0, 400.0, escala, Vector3::new(angulo * 0.5, angulo, 0.0));
-            for (x, y) in vertices_a_pantalla(&vertices, &u, 400.0) {
+            for (x, y) in vertices_a_pantalla(&vertices, &u) {
                 assert!((0.0..=400.0).contains(&x) && (0.0..=400.0).contains(&y), "{x} {y}");
             }
         }
