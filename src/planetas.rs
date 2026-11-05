@@ -276,3 +276,41 @@ pub fn evidencias() -> io::Result<()> {
     }
     Ok(())
 }
+
+/// Guarda los cuadros de los videos de cada efecto en `target/cuadros/<clip>/`.
+/// Después se convierten a GIF con ffmpeg (ver el README).
+pub fn grabar() -> io::Result<()> {
+    const CUADROS: usize = 72;
+    let esfera = Esfera::cargar()?;
+    let fondo = fondo_estrellado();
+
+    let base = Escena { tiempo: 3.0, ..Escena::default() };
+    let rocoso = Escena { cuerpo: Cuerpo::Rocoso, ..base };
+    // Cada clip indica cómo cambia la escena en el cuadro `i` de `CUADROS`.
+    let clips: [(&str, Box<dyn Fn(f32) -> Escena>); 4] = [
+        // El material de la estrella cambia con el tiempo; la esfera no se mueve.
+        ("estrella", Box::new(move |f| Escena { cuerpo: Cuerpo::Estrella, tiempo: f * 14.0, ..base })),
+        // Las nubes avanzan sobre el terreno, que no se mueve; la luz está fija.
+        ("rocoso_nubes", Box::new(move |f| Escena { tiempo: 3.0 + f * 40.0, ..rocoso })),
+        // La luz da la vuelta al planeta con el tiempo detenido.
+        (
+            "rocoso_luz",
+            Box::new(move |f| Escena { luz_azimut: -2.8 + f * std::f32::consts::TAU, ..rocoso }),
+        ),
+        // Las bandas fluyen y la tormenta gira.
+        ("gaseoso", Box::new(move |f| Escena { cuerpo: Cuerpo::Gaseoso, tiempo: f * 60.0, ..base })),
+    ];
+
+    for (nombre, escena_en) in &clips {
+        let carpeta = format!("target/cuadros/{nombre}");
+        std::fs::create_dir_all(&carpeta)?;
+        for i in 0..CUADROS {
+            let escena = escena_en(i as f32 / CUADROS as f32);
+            let mut framebuffer = nuevo_framebuffer();
+            esfera.dibujar(&mut framebuffer, &escena, &fondo);
+            framebuffer.to_image().export_image(&format!("{carpeta}/{i:03}.png"));
+        }
+        println!("Guardados {CUADROS} cuadros en {carpeta}");
+    }
+    Ok(())
+}

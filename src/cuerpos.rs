@@ -446,6 +446,9 @@ const GASEOSO_RADIO_TORMENTA: f32 = 0.42;
 const GASEOSO_FUERZA_TORMENTA: f32 = 5.0;
 /// Velocidad de giro de la tormenta.
 const GASEOSO_GIRO_TORMENTA: f32 = 0.5;
+/// Segundos que dura cada fase del flujo (ver `gigante_gaseoso`): mayor = las
+/// bandas se estiran más antes de que la fase se desvanezca.
+const GASEOSO_PERIODO_FLUJO: f32 = 20.0;
 
 /// Rota `p` un ángulo `angulo` alrededor del eje unitario `eje` (fórmula de Rodrigues).
 fn rotar_eje(p: Vector3, eje: Vector3, angulo: f32) -> Vector3 {
@@ -470,13 +473,11 @@ fn vortice(p: Vector3, tiempo: f32) -> (Vector3, f32) {
     (rotar_eje(p, centro, angulo), cercania)
 }
 
-/// Gigante gaseoso "Lirio": bandas de lavanda, crema y verde azulado que fluyen
-/// como líquido, con una gran tormenta que las enrosca.
-pub fn gigante_gaseoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
-    let r = ruidos();
-    let p = direccion(fragment);
-    let t = u.time;
-
+/// Patrón de la atmósfera de Lirio en `p` después de `t` segundos de flujo.
+///
+/// Devuelve el valor de las bandas (-1 a 1), el de los filamentos y qué tan
+/// dentro de la tormenta está el punto.
+fn atmosfera_lirio(r: &Ruidos, p: Vector3, t: f32) -> (f32, f32, f32) {
     // 1. La tormenta deforma las coordenadas antes de calcular las bandas.
     let (q, tormenta) = vortice(p, t);
 
@@ -495,6 +496,29 @@ pub fn gigante_gaseoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
 
     let bandas = 0.6 * (latitud * GASEOSO_FRECUENCIA_BANDAS).sin()
         + 0.4 * (latitud * GASEOSO_FRECUENCIA_BANDAS * 2.3 + 1.3).sin();
+    (bandas, filamentos, tormenta)
+}
+
+/// Gigante gaseoso "Lirio": bandas de lavanda, crema y verde azulado que fluyen
+/// como líquido, con una gran tormenta que las enrosca.
+pub fn gigante_gaseoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
+    let r = ruidos();
+    let p = direccion(fragment);
+
+    // Flujo en dos fases (técnica de "flow map"). La rotación diferencial y el
+    // giro de la tormenta acumulan deformación con el tiempo: después de un
+    // minuto las bandas serían rayas finas. Por eso el patrón se calcula con dos
+    // relojes que se reinician cada `GASEOSO_PERIODO_FLUJO` segundos, desfasados
+    // medio periodo, y se mezclan: cada fase se desvanece justo antes de
+    // reiniciarse. El movimiento se ve continuo y la deformación queda acotada.
+    let fase = (u.time / GASEOSO_PERIODO_FLUJO).fract();
+    let (bandas_a, filamentos_a, tormenta) = atmosfera_lirio(r, p, fase * GASEOSO_PERIODO_FLUJO);
+    let fase_b = (fase + 0.5).fract();
+    let (bandas_b, filamentos_b, _) = atmosfera_lirio(r, p, fase_b * GASEOSO_PERIODO_FLUJO);
+    let peso_a = 1.0 - (2.0 * fase - 1.0).abs(); // 0 al reiniciarse la fase A
+    let bandas = bandas_a * peso_a + bandas_b * (1.0 - peso_a);
+    let filamentos = filamentos_a * peso_a + filamentos_b * (1.0 - peso_a);
+
     let mut color = rampa(
         bandas * 0.5 + 0.5,
         &[

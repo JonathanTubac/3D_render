@@ -150,6 +150,9 @@ fn main() {
         // Escena de prueba del laboratorio de relleno de triángulos.
         ventana_relleno();
         Ok(())
+    } else if flag("--grabar") {
+        // Cuadros de los videos de cada efecto.
+        planetas::grabar()
     } else if flag("--evidencias") {
         // Imágenes que muestran cada efecto de los cuerpos celestes.
         planetas::evidencias()
