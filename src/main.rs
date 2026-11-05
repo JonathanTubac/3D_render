@@ -1,14 +1,17 @@
 mod color;
+mod cuerpos;
 mod fragment;
 mod framebuffer;
 mod laboratorio;
 mod line;
 mod obj;
+mod planetas;
 mod primitive;
 mod rasterizer;
 mod render;
 mod shaders;
 mod triangle;
+mod vec3;
 mod vertex;
 // Ejercicio de la fase de vértices; el renderer no lo utiliza.
 #[allow(dead_code)]
@@ -16,6 +19,7 @@ mod vertices;
 mod visor;
 
 use raylib::prelude::*;
+use rayon::prelude::*;
 
 use framebuffer::Framebuffer;
 use primitive::primitive_assembly;
@@ -94,19 +98,21 @@ fn render(
     let fragments = rasterize(&triangles, mode);
 
     // 4. Procesamiento de fragmentos
-    //    El fragment shader decide el color de cada fragmento y ese color se
-    //    escribe en su posición del framebuffer. Los modos rellenos usan el
-    //    z-buffer: el shader solo se ejecuta si el fragmento queda delante de lo
-    //    que ya hay en ese píxel.
-    for fragment in fragments {
+    //    El fragment shader decide el color de cada fragmento. El color de un
+    //    fragmento no depende de los demás, así que los shaders se ejecutan en
+    //    paralelo en todos los núcleos del CPU (`par_iter` de rayon). Después
+    //    cada color se escribe en orden en el framebuffer; los modos rellenos
+    //    usan el z-buffer para que quede la superficie más cercana.
+    let colors: Vec<Vector3> = fragments.par_iter().map(|fragment| shader(fragment, uniforms)).collect();
+
+    for (fragment, color) in fragments.iter().zip(colors) {
         let x = fragment.position.x as i32;
         let y = fragment.position.y as i32;
 
-        if !rellenar {
-            framebuffer.point(x, y, shader(&fragment, uniforms));
-        } else if framebuffer.is_closer(x, y, fragment.depth) {
-            let color = shader(&fragment, uniforms);
+        if rellenar {
             framebuffer.point_with_depth(x, y, fragment.depth, color);
+        } else {
+            framebuffer.point(x, y, color);
         }
     }
 }
@@ -130,28 +136,36 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let flag = |nombre: &str| args.iter().any(|a| a == nombre);
 
-    // `--nave` abre el visor de la nave del Proyecto 1 (con `--captura`, solo guarda la imagen).
-    if flag("--nave") {
-        if let Err(e) = visor::ejecutar(flag("--captura")) {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-    // Mide la rasterización de cada modo, sin abrir la ventana.
-    if flag("--benchmark-triangles") {
-        if let Err(e) = laboratorio::benchmark() {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-    // Guarda una imagen de la escena de prueba en cada modo.
-    if flag("--capturas-relleno") {
+    let resultado = if flag("--nave") {
+        // Visor de la nave del Proyecto 1 (con `--captura`, solo guarda la imagen).
+        visor::ejecutar(flag("--captura"))
+    } else if flag("--benchmark-triangles") {
+        // Mide la rasterización de cada modo, sin abrir la ventana.
+        laboratorio::benchmark()
+    } else if flag("--capturas-relleno") {
+        // Guarda una imagen de la escena de prueba del relleno en cada modo.
         laboratorio::capturas();
-        return;
-    }
+        Ok(())
+    } else if flag("--relleno") {
+        // Escena de prueba del laboratorio de relleno de triángulos.
+        ventana_relleno();
+        Ok(())
+    } else if flag("--capturas-planetas") {
+        // Guarda una imagen de cada cuerpo celeste.
+        planetas::capturas()
+    } else {
+        // Laboratorio de planetas y estrellas.
+        planetas::ejecutar()
+    };
 
+    if let Err(e) = resultado {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+/// Ventana con la escena de prueba del laboratorio de relleno de triángulos.
+fn ventana_relleno() {
     let (mut window, thread) = raylib::init()
         .size(laboratorio::ANCHO as i32, laboratorio::ALTO as i32)
         .title("Relleno de triangulos")

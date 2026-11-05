@@ -66,12 +66,6 @@ impl Framebuffer {
         }
     }
 
-    /// ¿Un fragmento con esta profundidad quedaría delante de lo que ya hay en el
-    /// píxel? Permite ejecutar el fragment shader solo cuando hace falta.
-    pub fn is_closer(&self, x: i32, y: i32, depth: f32) -> bool {
-        self.index(x, y).is_some_and(|i| depth < self.zbuffer[i])
-    }
-
     /// Pinta un pixel solo si `depth` está más cerca que lo que ya hay en el z-buffer.
     /// Devuelve `true` si el pixel se pintó.
     pub fn point_with_depth(&mut self, x: i32, y: i32, depth: f32, color: Vector3) -> bool {

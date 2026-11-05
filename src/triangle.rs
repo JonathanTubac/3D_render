@@ -2,6 +2,7 @@ use raylib::math::{Vector2, Vector3};
 
 use crate::fragment::Fragment;
 use crate::line::{fragment_count, line_into};
+use crate::vec3;
 use crate::vertex::Vertex;
 
 /// Genera los fragmentos del contorno de un triángulo: las tres líneas que
@@ -165,12 +166,14 @@ impl Relleno {
     fn fragmento(&self, x: i32, y: i32, w: [f32; 3]) -> Fragment {
         let l = [w[0] / self.area, w[1] / self.area, w[2] / self.area];
         let [a, b, c] = &self.v;
-        let mezcla = |pa: Vector3, pb: Vector3, pc: Vector3| pa * l[0] + pb * l[1] + pc * l[2];
+        let mezcla = |pa: Vector3, pb: Vector3, pc: Vector3| {
+            vec3::add(vec3::add(vec3::scale(pa, l[0]), vec3::scale(pb, l[1])), vec3::scale(pc, l[2]))
+        };
 
-        let z = mezcla(a.transformed_position, b.transformed_position, c.transformed_position).z;
+        let z = a.transformed_position.z * l[0] + b.transformed_position.z * l[1] + c.transformed_position.z * l[2];
         // z crece hacia el observador; la profundidad es la distancia, por eso cambia de signo.
         let mut fragment = Fragment::new(x as f32, y as f32, mezcla(a.color, b.color, c.color), -z);
-        fragment.normal = mezcla(a.transformed_normal, b.transformed_normal, c.transformed_normal).normalize();
+        fragment.normal = vec3::normalize(mezcla(a.transformed_normal, b.transformed_normal, c.transformed_normal));
         fragment.vertex_position = mezcla(a.position, b.position, c.position);
         fragment
     }

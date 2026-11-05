@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+fastnoise-lite = "1.1.1"
 raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION"] }
+rayon = "1.12.0"
 
 # Un solo codegen unit permite que el compilador optimice en línea las llamadas
 # entre módulos (rasterize -> triangle -> line). Con el valor por defecto, dibujar
