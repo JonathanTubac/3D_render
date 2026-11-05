@@ -13,7 +13,7 @@ use crate::obj::load_obj;
 use crate::primitive::primitive_assembly;
 use crate::rasterizer::{rasterize, TriangleMode};
 use crate::render::{centrar, uniforms_camara, Camara, Encuadre};
-use crate::shaders::vertex_shader;
+use crate::shaders::{fragment_shader, vertex_shader};
 use crate::vertex::Vertex;
 use crate::{render, Uniforms};
 
@@ -61,13 +61,13 @@ fn color_hex(hex: u32) -> Vector3 {
 
 /// Guarda una imagen de la escena de prueba en cada modo.
 pub fn capturas() {
-    let uniforms = Uniforms { model_matrix: Matrix::identity() };
+    let uniforms = Uniforms::new(Matrix::identity());
     let escena = escena_de_prueba();
     for mode in TriangleMode::TODOS {
         let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
         framebuffer.set_background_color(Vector3::new(0.0, 0.0, 0.0));
         framebuffer.clear();
-        render(&mut framebuffer, &uniforms, &escena, mode);
+        render(&mut framebuffer, &uniforms, &escena, mode, fragment_shader);
         let archivo = format!("docs/relleno_{}.png", mode.nombre().to_lowercase());
         framebuffer.to_image().export_image(&archivo);
         println!("Guardada {archivo}");

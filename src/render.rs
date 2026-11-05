@@ -107,7 +107,10 @@ pub fn uniforms_camara(camara: &Camara, encuadre: &Encuadre, ancho: f32, alto: f
     let modelo = create_model_matrix(Vector3::new(0.0, 0.0, 0.0), scale, rotation);
 
     let a_pantalla = Matrix::scale(1.0, -1.0, 1.0) * Matrix::translate(ancho / 2.0, alto / 2.0, 0.0);
-    Uniforms { model_matrix: modelo * a_pantalla }
+    let mut uniforms = Uniforms::new(modelo * a_pantalla);
+    // Las normales solo se rotan: sin escala, sin inversión de y y sin traslación.
+    uniforms.normal_matrix = create_model_matrix(Vector3::new(0.0, 0.0, 0.0), 1.0, rotation);
+    uniforms
 }
 
 #[cfg(test)]

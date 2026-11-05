@@ -33,14 +33,20 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
     let mut result = vertex.clone();
     result.transformed_position = Vector3::new(transformed.x, transformed.y, transformed.z);
 
+    // La normal es una dirección, no un punto: con w = 0.0 no le afecta la
+    // traslación. Solo se rota, con la matriz de normales.
+    let normal = Vector4::new(vertex.normal.x, vertex.normal.y, vertex.normal.z, 0.0);
+    let n = multiply_matrix_vector4(&uniforms.normal_matrix, &normal);
+    result.transformed_normal = Vector3::new(n.x, n.y, n.z).normalize();
+
     result
 }
 
 /// Decide el color de un fragmento. Se llama una vez por cada fragmento que
 /// genera la rasterización.
 ///
-/// Por ahora es un passthrough: devuelve el color que el fragmento ya trae.
-pub fn fragment_shader(fragment: &Fragment) -> Vector3 {
+/// Es un passthrough: devuelve el color que el fragmento ya trae.
+pub fn fragment_shader(fragment: &Fragment, _uniforms: &Uniforms) -> Vector3 {
     fragment.color
 }
 
@@ -51,7 +57,7 @@ mod tests {
 
     fn shader(position: Vector3, model_matrix: Matrix) -> Vector3 {
         let vertex = Vertex::new(position);
-        vertex_shader(&vertex, &Uniforms { model_matrix }).transformed_position
+        vertex_shader(&vertex, &Uniforms::new(model_matrix)).transformed_position
     }
 
     fn cerca(a: Vector3, b: Vector3) -> bool {
@@ -62,7 +68,7 @@ mod tests {
     fn fragment_shader_is_a_passthrough() {
         let color = Vector3::new(0.2, 0.4, 0.6);
         let fragment = Fragment::new(10.0, 20.0, color, 0.5);
-        assert_eq!(fragment_shader(&fragment), color);
+        assert_eq!(fragment_shader(&fragment, &Uniforms::new(Matrix::identity())), color);
     }
 
     #[test]
@@ -101,10 +107,20 @@ mod tests {
     }
 
     #[test]
+    fn normals_are_rotated_but_not_translated() {
+        let mut vertex = Vertex::new(Vector3::new(0.0, 0.0, 0.0));
+        vertex.normal = Vector3::new(1.0, 0.0, 0.0);
+        let mut uniforms = Uniforms::new(Matrix::translate(100.0, 0.0, 0.0));
+        uniforms.normal_matrix = Matrix::rotate_z(FRAC_PI_2);
+        let n = vertex_shader(&vertex, &uniforms).transformed_normal;
+        assert!(cerca(n, Vector3::new(0.0, 1.0, 0.0)), "{n:?}");
+    }
+
+    #[test]
     fn keeps_the_other_vertex_data() {
         let rojo = Vector3::new(1.0, 0.0, 0.0);
         let vertex = Vertex::new_with_color(Vector3::new(1.0, 2.0, 3.0), rojo);
-        let result = vertex_shader(&vertex, &Uniforms { model_matrix: Matrix::translate(1.0, 0.0, 0.0) });
+        let result = vertex_shader(&vertex, &Uniforms::new(Matrix::translate(1.0, 0.0, 0.0)));
         assert_eq!(result.position, vertex.position);
         assert_eq!(result.color, rojo);
     }

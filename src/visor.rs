@@ -11,6 +11,7 @@ use crate::obj::load_obj;
 use crate::render::{centrar, uniforms_camara, Camara, Encuadre};
 use crate::vertex::Vertex;
 use crate::rasterizer::TriangleMode;
+use crate::shaders::fragment_shader;
 use crate::{leer_modo, render};
 
 const ANCHO: usize = 1024;
@@ -114,7 +115,7 @@ fn dibujar(
 ) {
     let uniforms = uniforms_camara(camara, encuadre, ANCHO as f32, ALTO as f32);
     framebuffer.clear();
-    render(framebuffer, &uniforms, vertex_array, mode);
+    render(framebuffer, &uniforms, vertex_array, mode, fragment_shader);
 }
 
 /// Ajusta la cámara según el teclado y el mouse; `R` la regresa a `inicial`.

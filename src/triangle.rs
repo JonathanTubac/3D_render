@@ -47,8 +47,9 @@ pub fn triangle_filled_barycentric_into(v1: &Vertex, v2: &Vertex, v3: &Vertex, f
 
     for y in t.y_min..=t.y_max {
         for x in t.x_min..=t.x_max {
-            if t.dentro(x, y) {
-                fragments.push(Fragment::new(x as f32, y as f32, t.color, t.depth));
+            let w = t.pesos(x, y);
+            if t.pasan(w) {
+                fragments.push(t.fragmento(x, y, w));
             }
         }
     }
@@ -64,7 +65,7 @@ pub fn triangle_filled_scanline_into(v1: &Vertex, v2: &Vertex, v3: &Vertex, frag
     for y in t.y_min..=t.y_max {
         let Some((inicio, fin)) = t.tramo(y) else { continue };
         for x in inicio..=fin {
-            fragments.push(Fragment::new(x as f32, y as f32, t.color, t.depth));
+            fragments.push(t.fragmento(x, y, t.pesos(x, y)));
         }
     }
 }
@@ -86,9 +87,8 @@ struct Relleno {
     x_max: i32,
     y_min: i32,
     y_max: i32,
-    /// Por ahora todos los fragmentos usan el color y la profundidad del primer vértice.
-    color: Vector3,
-    depth: f32,
+    /// Los vértices en el mismo orden que `p`, para interpolar sus atributos.
+    v: [Vertex; 3],
 }
 
 impl Relleno {
@@ -99,6 +99,7 @@ impl Relleno {
         let a = Vector2::new(v1.transformed_position.x, v1.transformed_position.y);
         let mut b = Vector2::new(v2.transformed_position.x, v2.transformed_position.y);
         let mut c = Vector2::new(v3.transformed_position.x, v3.transformed_position.y);
+        let (mut vb, mut vc) = (*v2, *v3);
 
         let mut area = edge(a, b, c);
         if area == 0.0 || !area.is_finite() {
@@ -108,6 +109,7 @@ impl Relleno {
         // invertir el orden no debe hacer desaparecer el triángulo.
         if area < 0.0 {
             std::mem::swap(&mut b, &mut c);
+            std::mem::swap(&mut vb, &mut vc);
             area = -area;
         }
         let p = [a, b, c];
@@ -127,26 +129,50 @@ impl Relleno {
             x_max: (max_x - 0.5).floor() as i32,
             y_min: (min_y - 0.5).ceil() as i32,
             y_max: (max_y - 0.5).floor() as i32,
-            color: v1.color,
-            depth: v1.transformed_position.z,
+            v: [*v1, vb, vc],
         })
     }
 
-    /// ¿El centro del píxel (x, y) está dentro del triángulo?
-    ///
-    /// `w0`, `w1`, `w2` son las coordenadas baricéntricas sin normalizar: las
-    /// coordenadas baricéntricas son `w0 / area`, `w1 / area` y `w2 / area`.
-    /// Como `area` es positiva, tienen el mismo signo, así que basta revisar `w`.
-    /// No se divide aquí porque solo hace falta saber si están adentro; la
-    /// división servirá cuando interpolemos atributos.
+    /// Coordenadas baricéntricas sin normalizar del centro del píxel (x, y):
+    /// `w0` es el peso del primer vértice, `w1` del segundo y `w2` del tercero.
+    /// Las coordenadas baricéntricas son `w0 / area`, `w1 / area` y `w2 / area`.
     #[inline]
-    fn dentro(&self, x: i32, y: i32) -> bool {
+    fn pesos(&self, x: i32, y: i32) -> [f32; 3] {
         let centro = Vector2::new(x as f32 + 0.5, y as f32 + 0.5);
         let [a, b, c] = self.p;
-        let w0 = edge(b, c, centro);
-        let w1 = edge(c, a, centro);
-        let w2 = edge(a, b, centro);
-        pasa(w0, self.top_left[0]) && pasa(w1, self.top_left[1]) && pasa(w2, self.top_left[2])
+        [edge(b, c, centro), edge(c, a, centro), edge(a, b, centro)]
+    }
+
+    /// ¿Los pesos indican que el centro está dentro del triángulo? Como `area` es
+    /// positiva, las baricéntricas tienen el mismo signo que `w`, así que no hace
+    /// falta dividir para decidirlo.
+    #[inline]
+    fn pasan(&self, w: [f32; 3]) -> bool {
+        pasa(w[0], self.top_left[0]) && pasa(w[1], self.top_left[1]) && pasa(w[2], self.top_left[2])
+    }
+
+    /// ¿El centro del píxel (x, y) está dentro del triángulo?
+    #[inline]
+    fn dentro(&self, x: i32, y: i32) -> bool {
+        self.pasan(self.pesos(x, y))
+    }
+
+    /// Fragmento del píxel (x, y) con sus atributos interpolados: cada atributo
+    /// es el promedio de los de los tres vértices, ponderado por las coordenadas
+    /// baricéntricas. Así el color, la profundidad, la normal y la posición en el
+    /// modelo cambian suavemente dentro del triángulo.
+    #[inline]
+    fn fragmento(&self, x: i32, y: i32, w: [f32; 3]) -> Fragment {
+        let l = [w[0] / self.area, w[1] / self.area, w[2] / self.area];
+        let [a, b, c] = &self.v;
+        let mezcla = |pa: Vector3, pb: Vector3, pc: Vector3| pa * l[0] + pb * l[1] + pc * l[2];
+
+        let z = mezcla(a.transformed_position, b.transformed_position, c.transformed_position).z;
+        // z crece hacia el observador; la profundidad es la distancia, por eso cambia de signo.
+        let mut fragment = Fragment::new(x as f32, y as f32, mezcla(a.color, b.color, c.color), -z);
+        fragment.normal = mezcla(a.transformed_normal, b.transformed_normal, c.transformed_normal).normalize();
+        fragment.vertex_position = mezcla(a.position, b.position, c.position);
+        fragment
     }
 
     /// Primer y último píxel de la fila `y` cuyo centro está dentro del triángulo.
@@ -346,6 +372,25 @@ mod tests {
             let t = [punto(), punto(), punto()];
             assert_eq!(baricentrico(&t), scanline(&t));
         }
+    }
+
+    #[test]
+    fn attributes_are_interpolated_with_barycentric_weights() {
+        // Colores rojo, verde y azul en las esquinas: el centroide mezcla los tres.
+        let a = Vertex::new_with_color(Vector3::new(0.0, 0.0, 3.0), Vector3::new(1.0, 0.0, 0.0));
+        let b = Vertex::new_with_color(Vector3::new(30.0, 0.0, 6.0), Vector3::new(0.0, 1.0, 0.0));
+        let c = Vertex::new_with_color(Vector3::new(0.0, 30.0, 9.0), Vector3::new(0.0, 0.0, 1.0));
+        let fragments = triangle_filled_barycentric(&a, &b, &c);
+
+        let esquina = fragments.iter().find(|f| f.position.x == 0.0 && f.position.y == 0.0).unwrap();
+        assert!(esquina.color.x > 0.9, "{:?}", esquina.color);
+
+        let centro = fragments.iter().find(|f| f.position.x == 9.0 && f.position.y == 9.0).unwrap();
+        for canal in [centro.color.x, centro.color.y, centro.color.z] {
+            assert!((canal - 1.0 / 3.0).abs() < 0.05, "{:?}", centro.color);
+        }
+        // Profundidad: la z interpolada es ~6, y la profundidad es su negativo.
+        assert!((centro.depth + 6.0).abs() < 0.3, "{}", centro.depth);
     }
 
     #[test]

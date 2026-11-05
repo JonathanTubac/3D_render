@@ -36,7 +36,8 @@ pub fn line_into(a: &Vertex, b: &Vertex, fragments: &mut Vec<Fragment>) {
     let sy = if y1 < y2 { 1 } else { -1 };
     let mut err = dx + dy;
 
-    let depth = a.transformed_position.z;
+    // z crece hacia el observador; la profundidad es la distancia, por eso cambia de signo.
+    let depth = -a.transformed_position.z;
 
     loop {
         fragments.push(Fragment::new(x1 as f32, y1 as f32, a.color, depth));
