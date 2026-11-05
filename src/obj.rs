@@ -9,9 +9,14 @@ use crate::vertex::Vertex;
 ///
 /// `indices` se lee de tres en tres: cada grupo `[a, b, c]` es un triángulo y
 /// cada valor es una posición dentro de `vertices` (ya convertida a base 0).
+///
+/// `normal_indices` va en paralelo a `indices`: para cada esquina de cada
+/// triángulo indica qué normal de `normals` usa, si la cara la especifica.
 pub struct Obj {
     pub vertices: Vec<Vector3>,
     pub indices: Vec<usize>,
+    pub normals: Vec<Vector3>,
+    pub normal_indices: Vec<Option<usize>>,
 }
 
 impl Obj {
@@ -22,8 +27,20 @@ impl Obj {
 
     /// Lista de vértices ordenada por caras: cada tres vértices consecutivos
     /// forman un triángulo. Un vértice compartido por varias caras se repite.
+    /// Si la cara indica una normal (`v/vt/vn`), el vértice la recibe.
     pub fn get_vertex_array(&self) -> Vec<Vertex> {
-        self.indices.iter().map(|&i| Vertex::new(self.vertices[i])).collect()
+        self.indices
+            .iter()
+            .zip(&self.normal_indices)
+            .map(|(&i, &n)| {
+                let mut vertex = Vertex::new(self.vertices[i]);
+                if let Some(n) = n {
+                    vertex.normal = self.normals[n];
+                    vertex.transformed_normal = vertex.normal;
+                }
+                vertex
+            })
+            .collect()
     }
 
     /// Devuelve los tres vértices del triángulo número `i`.
@@ -33,8 +50,9 @@ impl Obj {
     }
 }
 
-/// Lee un archivo OBJ y devuelve sus posiciones (`v`) y triángulos (`f`).
-/// Cualquier otro tipo de línea (`vt`, `vn`, `o`, `mtllib`, comentarios...) se ignora.
+/// Lee un archivo OBJ y devuelve sus posiciones (`v`), normales (`vn`) y
+/// triángulos (`f`). Cualquier otro tipo de línea (`vt`, `o`, `mtllib`,
+/// comentarios...) se ignora.
 pub fn load_obj(path: &str) -> io::Result<Obj> {
     let contenido = fs::read_to_string(path)?;
     parse_obj(&contenido)
@@ -43,6 +61,8 @@ pub fn load_obj(path: &str) -> io::Result<Obj> {
 fn parse_obj(contenido: &str) -> io::Result<Obj> {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
+    let mut normals = Vec::new();
+    let mut normal_indices = Vec::new();
 
     for (n, linea) in contenido.lines().enumerate() {
         let num_linea = n + 1;
@@ -56,17 +76,26 @@ fn parse_obj(contenido: &str) -> io::Result<Obj> {
                 let z = parse_f32(partes.next(), num_linea)?;
                 vertices.push(Vector3::new(x, y, z));
             }
+            Some("vn") => {
+                let x = parse_f32(partes.next(), num_linea)?;
+                let y = parse_f32(partes.next(), num_linea)?;
+                let z = parse_f32(partes.next(), num_linea)?;
+                normals.push(Vector3::new(x, y, z));
+            }
             Some("f") => {
                 let cara = partes
-                    .map(|grupo| parse_indice(grupo, num_linea))
-                    .collect::<io::Result<Vec<usize>>>()?;
+                    .map(|grupo| parse_grupo(grupo, num_linea))
+                    .collect::<io::Result<Vec<(usize, Option<usize>)>>>()?;
                 if cara.len() < 3 {
                     return Err(error(num_linea, "una cara necesita al menos 3 vértices"));
                 }
                 // Si la cara ya es un triángulo esto agrega solo (0, 1, 2).
                 // Si trae más vértices, se divide en abanico: (0, i, i+1).
                 for i in 1..cara.len() - 1 {
-                    indices.extend_from_slice(&[cara[0], cara[i], cara[i + 1]]);
+                    for (v, n) in [cara[0], cara[i], cara[i + 1]] {
+                        indices.push(v);
+                        normal_indices.push(n);
+                    }
                 }
             }
             _ => {}
@@ -81,8 +110,15 @@ fn parse_obj(contenido: &str) -> io::Result<Obj> {
             ));
         }
     }
+    // Algunos archivos (como el cubo de la guía) nombran normales que no incluyen.
+    // Esas referencias se ignoran: el vértice se queda sin normal propia.
+    for n in &mut normal_indices {
+        if n.is_some_and(|n| n >= normals.len()) {
+            *n = None;
+        }
+    }
 
-    Ok(Obj { vertices, indices })
+    Ok(Obj { vertices, indices, normals, normal_indices })
 }
 
 fn parse_f32(texto: Option<&str>, num_linea: usize) -> io::Result<f32> {
@@ -92,10 +128,20 @@ fn parse_f32(texto: Option<&str>, num_linea: usize) -> io::Result<f32> {
         .map_err(|_| error(num_linea, &format!("'{texto}' no es un número")))
 }
 
-/// Convierte un grupo como `5`, `5/7` o `5/7/2` en el índice de vértice en base 0.
-fn parse_indice(grupo: &str, num_linea: usize) -> io::Result<usize> {
-    // Solo nos interesa lo que está antes de la primera '/'.
-    let texto = grupo.split('/').next().unwrap_or("");
+/// Convierte un grupo como `5`, `5/7`, `5//2` o `5/7/2` en el índice del vértice
+/// y, si lo trae, el de su normal (el tercer número), ambos en base 0.
+fn parse_grupo(grupo: &str, num_linea: usize) -> io::Result<(usize, Option<usize>)> {
+    let mut partes = grupo.split('/');
+    let vertice = parse_indice(partes.next().unwrap_or(""), grupo, num_linea)?;
+    // El segundo número es la coordenada de textura, que no se usa.
+    let normal = match partes.nth(1) {
+        Some(texto) if !texto.is_empty() => Some(parse_indice(texto, grupo, num_linea)?),
+        _ => None,
+    };
+    Ok((vertice, normal))
+}
+
+fn parse_indice(texto: &str, grupo: &str, num_linea: usize) -> io::Result<usize> {
     let indice: usize = texto
         .parse()
         .map_err(|_| error(num_linea, &format!("'{grupo}' no es un índice válido")))?;
@@ -149,6 +195,29 @@ mod tests {
     fn splits_quads_into_two_triangles() {
         let obj = parse_obj("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n").unwrap();
         assert_eq!(obj.indices, vec![0, 1, 2, 0, 2, 3]);
+    }
+
+    #[test]
+    fn reads_normals_and_assigns_them_to_vertices() {
+        let obj = parse_obj("v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nvn 0 1 0\nf 1//1 2//2 3//1\n").unwrap();
+        assert_eq!(obj.normals.len(), 2);
+        assert_eq!(obj.normal_indices, vec![Some(0), Some(1), Some(0)]);
+        let vertex_array = obj.get_vertex_array();
+        assert_eq!(vertex_array[1].normal, Vector3::new(0.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn missing_normals_are_ignored() {
+        let obj = parse_obj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1//4 2//5 3//6\n").unwrap();
+        assert_eq!(obj.normal_indices, vec![None, None, None]);
+    }
+
+    #[test]
+    fn loads_the_provided_sphere() {
+        let obj = load_obj("assets/sphere.obj").unwrap();
+        assert_eq!(obj.vertices.len(), 98);
+        assert_eq!(obj.triangle_count(), 192);
+        assert!(obj.normal_indices.iter().all(Option::is_some));
     }
 
     #[test]
