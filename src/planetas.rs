@@ -59,7 +59,7 @@ impl Cuerpo {
         match self {
             Cuerpo::Estrella => cuerpos::estrella,
             Cuerpo::Rocoso => cuerpos::planeta_rocoso,
-            Cuerpo::Gaseoso => cuerpos::estrella,
+            Cuerpo::Gaseoso => cuerpos::gigante_gaseoso,
         }
     }
 }

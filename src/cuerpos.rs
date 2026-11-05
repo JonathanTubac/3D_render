@@ -427,6 +427,105 @@ pub fn planeta_rocoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     add(color, scale(rgb(0x5FA8FF), 0.45 * borde * suave(-0.2, 0.4, dia)))
 }
 
+// ---------------------------------------------------------------------------
+// Gigante gaseoso: Lirio
+// ---------------------------------------------------------------------------
+
+/// Cantidad de bandas: mayor = bandas más delgadas.
+const GASEOSO_FRECUENCIA_BANDAS: f32 = 9.0;
+/// Cuánto ondulan las fronteras entre bandas: mayor = bandas más turbulentas.
+const GASEOSO_LIQUIDEZ: f32 = 0.13;
+/// Velocidad de la rotación diferencial: cuánto más rápido giran unas latitudes
+/// que otras. 0 = las bandas no se deslizan.
+const GASEOSO_CORTE: f32 = 0.06;
+/// Centro de la tormenta, como dirección sobre la esfera.
+const GASEOSO_CENTRO_TORMENTA: Vector3 = Vector3 { x: -0.15, y: -0.3, z: 0.94 };
+/// Radio de la tormenta (ángulo en radianes desde su centro).
+const GASEOSO_RADIO_TORMENTA: f32 = 0.42;
+/// Cuánto tuerce la tormenta las bandas en su centro, en radianes.
+const GASEOSO_FUERZA_TORMENTA: f32 = 5.0;
+/// Velocidad de giro de la tormenta.
+const GASEOSO_GIRO_TORMENTA: f32 = 0.5;
+
+/// Rota `p` un ángulo `angulo` alrededor del eje unitario `eje` (fórmula de Rodrigues).
+fn rotar_eje(p: Vector3, eje: Vector3, angulo: f32) -> Vector3 {
+    let (s, c) = angulo.sin_cos();
+    let cruz = v3(eje.y * p.z - eje.z * p.y, eje.z * p.x - eje.x * p.z, eje.x * p.y - eje.y * p.x);
+    add(add(scale(p, c), scale(cruz, s)), scale(eje, vec3::dot(eje, p) * (1.0 - c)))
+}
+
+/// Vórtice: rota los puntos cercanos al centro de la tormenta alrededor de ese
+/// centro. Cuanto más cerca del centro, más giran, así que las bandas que pasan
+/// por ahí se enroscan en espiral. Lejos de la tormenta `p` no cambia.
+///
+/// Devuelve el punto deformado y qué tan dentro de la tormenta está (0 a 1).
+fn vortice(p: Vector3, tiempo: f32) -> (Vector3, f32) {
+    let centro = vec3::normalize(GASEOSO_CENTRO_TORMENTA);
+    let distancia = vec3::dot(p, centro).clamp(-1.0, 1.0).acos();
+    if distancia >= GASEOSO_RADIO_TORMENTA {
+        return (p, 0.0);
+    }
+    let cercania = 1.0 - distancia / GASEOSO_RADIO_TORMENTA; // 1 en el centro
+    let angulo = cercania * cercania * (GASEOSO_FUERZA_TORMENTA + tiempo * GASEOSO_GIRO_TORMENTA);
+    (rotar_eje(p, centro, angulo), cercania)
+}
+
+/// Gigante gaseoso "Lirio": bandas de lavanda, crema y verde azulado que fluyen
+/// como líquido, con una gran tormenta que las enrosca.
+pub fn gigante_gaseoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
+    let r = ruidos();
+    let p = direccion(fragment);
+    let t = u.time;
+
+    // 1. La tormenta deforma las coordenadas antes de calcular las bandas.
+    let (q, tormenta) = vortice(p, t);
+
+    // 2. Rotación diferencial: cada latitud gira a otra velocidad, así las bandas
+    //    se deslizan unas sobre otras.
+    let q = rotar_y(q, t * GASEOSO_CORTE * (1.0 + 2.0 * (q.y * 4.0).sin()));
+
+    // 3. Bandas líquidas: la latitud se desplaza con ruido sobre coordenadas
+    //    torcidas, de modo que las fronteras ondulan y se mezclan.
+    let base = add(scale(q, 1.8), v3(0.0, 0.0, t * 0.02));
+    let (wx, wy, wz) = r.deformacion.domain_warp_3d(base.x, base.y, base.z);
+    let turbulencia = ruido(&r.fbm, v3(wx, wy * 2.0, wz));
+    // Filamentos: ruido estirado a lo largo de los paralelos.
+    let filamentos = ruido(&r.fbm_suave, v3(q.x * 3.0, q.y * 22.0, q.z * 3.0));
+    let latitud = q.y + GASEOSO_LIQUIDEZ * turbulencia + 0.04 * filamentos;
+
+    let bandas = 0.6 * (latitud * GASEOSO_FRECUENCIA_BANDAS).sin()
+        + 0.4 * (latitud * GASEOSO_FRECUENCIA_BANDAS * 2.3 + 1.3).sin();
+    let mut color = rampa(
+        bandas * 0.5 + 0.5,
+        &[
+            (0.0, rgb(0x3B2560)),
+            (0.22, rgb(0x7E62B5)),
+            (0.42, rgb(0xC9B8E8)),
+            (0.58, rgb(0xF3E9D6)),
+            (0.76, rgb(0x6FB3B0)),
+            (1.0, rgb(0x2C6F78)),
+        ],
+    );
+
+    // 4. Centro de la tormenta: un ojo coral con el borde más claro.
+    let ojo = suave(0.35, 0.8, tormenta);
+    let anillo = suave(0.15, 0.35, tormenta) * (1.0 - suave(0.45, 0.6, tormenta));
+    color = mezclar(color, rgb(0xF6EEF7), 0.35 * anillo);
+    color = mezclar(color, mezclar(rgb(0xF29A76), rgb(0xC0506A), suave(-0.1, 0.3, filamentos)), 0.8 * ojo);
+
+    // 5. Iluminación suave: la atmósfera dispersa la luz, así que el terminador
+    //    es gradual (difusa "envuelta") y el borde se oscurece.
+    let n = rotar(&u.normal_matrix, p);
+    let difusa = ((vec3::dot(n, u.light_dir) + 0.25) / 1.25).max(0.0);
+    let borde = n.z.max(0.0);
+    let mut iluminado = scale(color, 0.03 + 0.97 * difusa * (0.55 + 0.45 * borde.sqrt()));
+
+    // Halo lavanda en el borde del lado iluminado.
+    let halo = (1.0 - borde).powi(3) * suave(-0.2, 0.5, vec3::dot(n, u.light_dir));
+    iluminado = add(iluminado, scale(rgb(0xB9A2FF), 0.35 * halo));
+    iluminado
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
