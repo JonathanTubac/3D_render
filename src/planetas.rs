@@ -81,7 +81,7 @@ impl Default for Escena {
             camara: Camara { yaw: 0.0, pitch: INCLINACION_INICIAL, zoom: 1.0 },
             luz_azimut: LUZ_AZIMUT_INICIAL,
             tiempo: 0.0,
-            cobertura_nubes: 0.5,
+            cobertura_nubes: 0.4,
         }
     }
 }
@@ -249,6 +249,30 @@ pub fn capturas() -> io::Result<()> {
         println!("{}: {:.1?}", cuerpo.nombre(), inicio.elapsed());
         let archivo = format!("docs/planetas/{}.png", cuerpo.archivo());
         framebuffer.to_image().export_image(&archivo);
+    }
+    Ok(())
+}
+
+/// Imágenes que muestran cada efecto con una configuración pensada para verlo.
+pub fn evidencias() -> io::Result<()> {
+    let esfera = Esfera::cargar()?;
+    let fondo = fondo_estrellado();
+    std::fs::create_dir_all("docs/planetas")?;
+
+    let base = Escena { tiempo: 3.0, ..Escena::default() };
+    let rocoso = Escena { cuerpo: Cuerpo::Rocoso, ..base };
+    let casos = [
+        // Luz desde atrás a la izquierda: casi todo lo visible es de noche.
+        ("rocoso_noche", Escena { luz_azimut: -2.3, cobertura_nubes: 0.3, ..rocoso }),
+        // La misma vista con poca y con mucha cobertura de nubes.
+        ("rocoso_nubes_0", Escena { cobertura_nubes: 0.0, ..rocoso }),
+        ("rocoso_nubes_80", Escena { cobertura_nubes: 0.8, ..rocoso }),
+    ];
+    for (archivo, escena) in casos {
+        let mut framebuffer = nuevo_framebuffer();
+        esfera.dibujar(&mut framebuffer, &escena, &fondo);
+        framebuffer.to_image().export_image(&format!("docs/planetas/{archivo}.png"));
+        println!("Guardada docs/planetas/{archivo}.png");
     }
     Ok(())
 }

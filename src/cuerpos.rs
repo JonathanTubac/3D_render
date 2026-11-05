@@ -305,8 +305,8 @@ fn superficie_thalassa(r: &Ruidos, p: Vector3) -> Superficie {
     let nieve = suave(0.75, 0.82, e + 0.15 * montana).max(hielo);
     color = mezclar(color, color_hielo, nieve);
 
-    // Más relieve en las zonas altas.
-    let fuerza = ROCOSO_FUERZA_RELIEVE * (0.35 + e).min(1.2);
+    // Más relieve en las zonas altas y menos sobre la nieve, que lo suaviza.
+    let fuerza = ROCOSO_FUERZA_RELIEVE * (0.35 + e).min(1.2) * (1.0 - 0.7 * nieve);
     Superficie {
         color,
         normal: relieve(r, p, fuerza),
@@ -315,33 +315,116 @@ fn superficie_thalassa(r: &Ruidos, p: Vector3) -> Superficie {
     }
 }
 
-/// Planeta rocoso "Thalassa": un mundo oceánico con archipiélagos, desiertos,
-/// montañas nevadas y casquetes polares.
+/// Tamaño de las nubes: mayor = nubes más pequeñas.
+const NUBES_ESCALA: f32 = 2.3;
+/// Radianes por segundo que gira la capa de nubes alrededor del eje del planeta.
+/// El terreno no gira, así que las nubes se mueven sobre los continentes.
+const NUBES_VELOCIDAD: f32 = 0.05;
+/// Qué tan rápido cambian de forma las nubes mientras se desplazan.
+const NUBES_EVOLUCION: f32 = 0.04;
+/// Altura de la capa de nubes sobre la superficie (el radio del planeta es 1).
+/// Mayor = sombras más separadas de sus nubes.
+const NUBES_ALTURA: f32 = 0.06;
+/// Qué tanto oscurece la sombra de una nube: 0 = sin sombra, 1 = negra.
+const NUBES_FUERZA_SOMBRA: f32 = 0.75;
+/// Densidad de ciudades: mayor = más luces en el lado nocturno.
+const ROCOSO_DENSIDAD_CIUDADES: f32 = 0.55;
+
+/// Máscara de nubes en la dirección `p`: 0 = cielo despejado, 1 = nube densa.
 ///
-/// El océano y la tierra reaccionan distinto a la luz: el agua tiene un reflejo
-/// especular y la tierra es mate y muestra relieve.
+/// La capa gira alrededor del eje y con el tiempo y además el ruido avanza en
+/// otra dirección, así que las nubes se desplazan sobre el terreno y cambian de
+/// forma. `cobertura` (0 a 1) mueve el umbral: con más cobertura, más valores del
+/// ruido cuentan como nube.
+fn nubes(r: &Ruidos, p: Vector3, tiempo: f32, cobertura: f32) -> f32 {
+    let pc = rotar_y(p, tiempo * NUBES_VELOCIDAD);
+    let q = add(scale(pc, NUBES_ESCALA), v3(0.0, tiempo * NUBES_EVOLUCION, 0.0));
+    let (wx, wy, wz) = r.deformacion.domain_warp_3d(q.x, q.y, q.z);
+    // Las nubes se estiran a lo largo de los paralelos, como en un planeta que gira.
+    let valor = ruido(&r.fbm, v3(wx * 0.8, wy * 1.5, wz * 0.8));
+    // Con cobertura 0 el umbral queda por encima de casi todo el ruido (cielo
+    // despejado) y con cobertura 1 por debajo (casi todo nublado).
+    let umbral = 0.5 - 1.1 * cobertura;
+    suave(umbral, umbral + 0.3, valor)
+}
+
+/// Sombra que proyectan las nubes sobre la superficie en `p`, de 0 (sin sombra)
+/// a `NUBES_FUERZA_SOMBRA`.
+///
+/// Desde `p` se sigue el rayo hacia la luz hasta la altura de la capa de nubes y
+/// ahí se consulta la máscara. Si la luz llega de lado, el rayo recorre más
+/// distancia antes de alcanzar las nubes y la sombra cae más lejos de su nube.
+/// Al mover la luz, las sombras se desplazan en la dirección opuesta.
+fn sombra_nubes(r: &Ruidos, p: Vector3, luz_modelo: Vector3, tiempo: f32, cobertura: f32) -> f32 {
+    let coseno = vec3::dot(p, luz_modelo).max(0.15);
+    let distancia = NUBES_ALTURA / coseno;
+    let donde = vec3::normalize(add(p, scale(luz_modelo, distancia)));
+    NUBES_FUERZA_SOMBRA * nubes(r, donde, tiempo, cobertura)
+}
+
+/// Luces de ciudades: manchas cálidas en la tierra habitable, con puntos más
+/// brillantes dentro de cada mancha.
+fn ciudades(r: &Ruidos, p: Vector3, habitable: f32) -> f32 {
+    let zonas = ruido(&r.fbm_suave, add(scale(p, 9.0), v3(0.0, 0.0, 21.0)));
+    let puntos = ruido(&r.fbm_suave, scale(p, 45.0));
+    let umbral = 0.15 - 0.3 * ROCOSO_DENSIDAD_CIUDADES;
+    habitable * suave(umbral, umbral + 0.12, zonas) * suave(-0.15, 0.2, puntos)
+}
+
+/// Planeta rocoso "Thalassa": un mundo oceánico con archipiélagos, desiertos,
+/// montañas nevadas, casquetes polares y una capa de nubes.
+///
+/// Combina, en este orden:
+/// 1. la superficie (`superficie_thalassa`) con su relieve (`relieve`);
+/// 2. la iluminación difusa, oscurecida por la sombra de las nubes;
+/// 3. el reflejo especular, solo en el océano;
+/// 4. las luces de las ciudades, solo en el lado nocturno;
+/// 5. las nubes encima de todo, y un borde de atmósfera.
 pub fn planeta_rocoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let r = ruidos();
     let p = direccion(fragment);
     let s = superficie_thalassa(r, p);
 
-    // Iluminación en el espacio de la vista.
-    let n = vec3::normalize(rotar(&u.normal_matrix, s.normal));
+    // Iluminación en el espacio de la vista. `n_lisa` es la normal sin relieve,
+    // para las nubes y para decidir qué lado es de noche.
     let luz = u.light_dir;
+    let n = vec3::normalize(rotar(&u.normal_matrix, s.normal));
+    let n_lisa = rotar(&u.normal_matrix, p);
     let difusa = vec3::dot(n, luz).max(0.0);
+    let dia = vec3::dot(n_lisa, luz);
 
-    let mut color = scale(s.color, 0.03 + 0.97 * difusa);
+    // Sombra de las nubes: la luz se pasa al espacio del modelo para seguir el
+    // rayo desde el punto de la superficie.
+    let luz_modelo = rotar_inversa(&u.normal_matrix, luz);
+    let sombra = if dia > 0.0 { sombra_nubes(r, p, luz_modelo, u.time, u.cloud_coverage) } else { 0.0 };
+    let luz_directa = difusa * (1.0 - sombra);
+
+    let mut color = scale(s.color, 0.03 + 0.97 * luz_directa);
 
     // Reflejo especular (Blinn-Phong) solo en el océano. El observador está en
     // +z, así que el vector medio entre la luz y la vista es normalize(L + V).
     if s.oceano > 0.0 {
         let medio = vec3::normalize(add(luz, v3(0.0, 0.0, 1.0)));
         let especular = vec3::dot(n, medio).max(0.0).powf(ROCOSO_EXPONENTE_OCEANO);
-        let reflejo = ROCOSO_BRILLO_OCEANO * especular * s.oceano * suave(0.0, 0.1, difusa);
+        let reflejo = ROCOSO_BRILLO_OCEANO * especular * s.oceano * suave(0.0, 0.1, difusa) * (1.0 - sombra);
         color = add(color, scale(rgb(0xFFF1D6), reflejo));
     }
-    let _ = s.habitable;
-    color
+
+    // Luces nocturnas: aparecen al cruzar el terminador hacia el lado oscuro.
+    let noche = 1.0 - suave(-0.15, 0.08, dia);
+    let nube = nubes(r, p, u.time, u.cloud_coverage);
+    if noche > 0.0 && s.habitable > 0.0 {
+        let luces = ciudades(r, p, s.habitable) * noche * (1.0 - 0.85 * nube);
+        color = add(color, scale(rgb(0xFFB45C), 1.8 * luces));
+    }
+
+    // Nubes encima de todo, iluminadas con la normal lisa.
+    let nube_iluminada = scale(rgb(0xF4F7FB), 0.04 + 0.96 * dia.max(0.0));
+    color = mezclar(color, nube_iluminada, 0.9 * nube);
+
+    // Atmósfera: un brillo azul en el borde del lado iluminado.
+    let borde = (1.0 - n_lisa.z.max(0.0)).powi(3);
+    add(color, scale(rgb(0x5FA8FF), 0.45 * borde * suave(-0.2, 0.4, dia)))
 }
 
 #[cfg(test)]

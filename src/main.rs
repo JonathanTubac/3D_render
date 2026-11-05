@@ -150,6 +150,9 @@ fn main() {
         // Escena de prueba del laboratorio de relleno de triángulos.
         ventana_relleno();
         Ok(())
+    } else if flag("--evidencias") {
+        // Imágenes que muestran cada efecto de los cuerpos celestes.
+        planetas::evidencias()
     } else if flag("--capturas-planetas") {
         // Guarda una imagen de cada cuerpo celeste.
         planetas::capturas()
