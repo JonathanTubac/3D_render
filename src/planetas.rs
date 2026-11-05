@@ -58,7 +58,7 @@ impl Cuerpo {
     pub fn shader(self) -> FragmentShader {
         match self {
             Cuerpo::Estrella => cuerpos::estrella,
-            Cuerpo::Rocoso => cuerpos::estrella,
+            Cuerpo::Rocoso => cuerpos::planeta_rocoso,
             Cuerpo::Gaseoso => cuerpos::estrella,
         }
     }

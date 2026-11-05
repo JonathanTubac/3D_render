@@ -207,6 +207,143 @@ pub fn estrella(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     scale(color, 0.6 + 0.4 * mu.sqrt())
 }
 
+// ---------------------------------------------------------------------------
+// Planeta rocoso: Thalassa
+// ---------------------------------------------------------------------------
+
+/// Tamaño de los continentes: mayor = continentes más pequeños y numerosos.
+const ROCOSO_ESCALA_CONTINENTES: f32 = 1.5;
+/// Nivel del mar: mayor = más océano y menos tierra.
+const ROCOSO_NIVEL_MAR: f32 = 0.06;
+/// Latitud (|y| en la esfera) donde empiezan los casquetes polares.
+const ROCOSO_LATITUD_HIELO: f32 = 0.8;
+/// Tamaño de las montañas del relieve: mayor = montañas más pequeñas.
+const ROCOSO_ESCALA_RELIEVE: f32 = 7.0;
+/// Fuerza del relieve: cuánto inclina las normales. 0 = superficie lisa.
+const ROCOSO_FUERZA_RELIEVE: f32 = 0.45;
+/// Brillo del reflejo especular del océano.
+const ROCOSO_BRILLO_OCEANO: f32 = 0.9;
+/// Exponente especular del océano: mayor = reflejo más pequeño y concentrado.
+const ROCOSO_EXPONENTE_OCEANO: f32 = 70.0;
+
+/// Superficie de Thalassa en un punto, antes de iluminarla.
+struct Superficie {
+    color: Vector3,
+    /// Normal en las coordenadas del modelo, ya con el relieve aplicado.
+    normal: Vector3,
+    /// 1 en mar abierto, 0 en tierra o hielo.
+    oceano: f32,
+    /// Qué tan habitable es el punto, de 0 a 1 (tierra baja, sin hielo ni desierto).
+    habitable: f32,
+}
+
+/// Altura de las montañas que usa el relieve.
+fn altura_montanas(r: &Ruidos, p: Vector3) -> f32 {
+    ruido(&r.fbm_suave, add(scale(p, ROCOSO_ESCALA_RELIEVE), v3(11.0, 0.0, 0.0)))
+}
+
+/// Relieve procedural (bump mapping): inclina la normal según la pendiente del
+/// campo de altura de las montañas, sin mover ningún vértice.
+///
+/// La pendiente se estima con diferencias finitas: cuánto cambia la altura al
+/// moverse un poco en x, y y z. Se descarta la parte de la pendiente que apunta
+/// hacia afuera de la esfera y lo que queda se resta de la normal: la normal se
+/// inclina alejándose de las cuestas, como en una montaña real.
+fn relieve(r: &Ruidos, p: Vector3, fuerza: f32) -> Vector3 {
+    const EPS: f32 = 0.004;
+    let h0 = altura_montanas(r, p);
+    let gradiente = scale(
+        v3(
+            altura_montanas(r, add(p, v3(EPS, 0.0, 0.0))) - h0,
+            altura_montanas(r, add(p, v3(0.0, EPS, 0.0))) - h0,
+            altura_montanas(r, add(p, v3(0.0, 0.0, EPS))) - h0,
+        ),
+        1.0 / EPS,
+    );
+    let tangente = sub(gradiente, scale(p, vec3::dot(gradiente, p)));
+    vec3::normalize(sub(p, scale(tangente, fuerza / ROCOSO_ESCALA_RELIEVE)))
+}
+
+fn superficie_thalassa(r: &Ruidos, p: Vector3) -> Superficie {
+    // Continentes: fBm sobre coordenadas deformadas, para costas irregulares.
+    let q = scale(p, ROCOSO_ESCALA_CONTINENTES);
+    let (wx, wy, wz) = r.deformacion.domain_warp_3d(q.x, q.y, q.z);
+    let h = ruido(&r.fbm, v3(wx, wy, wz));
+
+    // Casquetes polares con borde irregular.
+    let latitud = p.y.abs() + 0.08 * ruido(&r.fbm_suave, scale(p, 5.0));
+    let hielo = suave(ROCOSO_LATITUD_HIELO, ROCOSO_LATITUD_HIELO + 0.04, latitud);
+    let color_hielo = rgb(0xEEF4FA);
+
+    if h < ROCOSO_NIVEL_MAR {
+        // Océano: más claro cerca de la costa y oscuro en lo profundo.
+        let profundidad = ROCOSO_NIVEL_MAR - h;
+        let agua = rampa(
+            profundidad,
+            &[(0.0, rgb(0x3FC9B9)), (0.05, rgb(0x1A8A9E)), (0.18, rgb(0x0E4A7A)), (0.4, rgb(0x081C45))],
+        );
+        return Superficie {
+            color: mezclar(agua, color_hielo, hielo),
+            normal: p,
+            oceano: 1.0 - hielo,
+            habitable: 0.0,
+        };
+    }
+
+    // Tierra. `e` es la elevación sobre el nivel del mar, de 0 a ~1.
+    let e = (h - ROCOSO_NIVEL_MAR) / 0.45;
+    // Humedad: separa bosques de desiertos.
+    let humedad = ruido(&r.fbm_suave, add(scale(p, 2.2), v3(0.0, 7.0, 0.0)));
+    let montana = altura_montanas(r, p);
+
+    let vegetacion = mezclar(rgb(0x4C8A3A), rgb(0x1F4D2A), suave(-0.1, 0.25, humedad + 0.3 * montana));
+    let desierto = mezclar(rgb(0xE0B96E), rgb(0xB5713E), suave(-0.2, 0.2, montana));
+    let mut color = mezclar(desierto, vegetacion, suave(-0.12, 0.02, humedad));
+    // Playa en la costa, roca y nieve en lo alto.
+    color = mezclar(rgb(0xE8D8A8), color, suave(0.0, 0.05, e));
+    color = mezclar(color, rgb(0x6E6258), suave(0.45, 0.65, e + 0.2 * montana));
+    let nieve = suave(0.75, 0.82, e + 0.15 * montana).max(hielo);
+    color = mezclar(color, color_hielo, nieve);
+
+    // Más relieve en las zonas altas.
+    let fuerza = ROCOSO_FUERZA_RELIEVE * (0.35 + e).min(1.2);
+    Superficie {
+        color,
+        normal: relieve(r, p, fuerza),
+        oceano: 0.0,
+        habitable: (1.0 - nieve) * suave(-0.12, 0.02, humedad) * (1.0 - suave(0.25, 0.45, e)),
+    }
+}
+
+/// Planeta rocoso "Thalassa": un mundo oceánico con archipiélagos, desiertos,
+/// montañas nevadas y casquetes polares.
+///
+/// El océano y la tierra reaccionan distinto a la luz: el agua tiene un reflejo
+/// especular y la tierra es mate y muestra relieve.
+pub fn planeta_rocoso(fragment: &Fragment, u: &Uniforms) -> Vector3 {
+    let r = ruidos();
+    let p = direccion(fragment);
+    let s = superficie_thalassa(r, p);
+
+    // Iluminación en el espacio de la vista.
+    let n = vec3::normalize(rotar(&u.normal_matrix, s.normal));
+    let luz = u.light_dir;
+    let difusa = vec3::dot(n, luz).max(0.0);
+
+    let mut color = scale(s.color, 0.03 + 0.97 * difusa);
+
+    // Reflejo especular (Blinn-Phong) solo en el océano. El observador está en
+    // +z, así que el vector medio entre la luz y la vista es normalize(L + V).
+    if s.oceano > 0.0 {
+        let medio = vec3::normalize(add(luz, v3(0.0, 0.0, 1.0)));
+        let especular = vec3::dot(n, medio).max(0.0).powf(ROCOSO_EXPONENTE_OCEANO);
+        let reflejo = ROCOSO_BRILLO_OCEANO * especular * s.oceano * suave(0.0, 0.1, difusa);
+        color = add(color, scale(rgb(0xFFF1D6), reflejo));
+    }
+    let _ = s.habitable;
+    color
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
